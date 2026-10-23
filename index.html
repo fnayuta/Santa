@@ -178,6 +178,7 @@ body {
 .recbig { font-family: var(--f-mincho); font-weight: 800; font-size: 32px; text-align: center; margin: 4px 0 2px; font-variant-numeric: tabular-nums; }
 .recline { margin: 8px 0 2px; font-size: 14px; }
 .sheet table.rec td { padding: 6px 2px; }
+.sheet table.cmp td { padding: 5px 3px; font-size: 13px; white-space: nowrap; }
 .sheet table.stand td { padding: 3px 2px; font-size: 13px; }
 .warn { font-size: 12px; color: #8a3b10; background: #f8dfc8; border-radius: 8px; padding: 6px 10px; }
 .pa { align-self: center; margin: 0 3px; font-weight: 700; color: #5b665f; }
@@ -286,6 +287,9 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
   }
   .iconbtn { padding: 5px 14px; font-size: 16px; }
   .top { top: 6px; right: 12px; }
+  /* 相手の副露・抜き北は相手の河の牌と同じ大きさ */
+  .backs .t { --w: calc(var(--srw) * var(--ms, 1)); }
+  .backs .vmelds .t { --w: calc(var(--srw) * var(--ms, 1)); }
   .act { height: 66px; min-width: 140px; font-size: 23px; border-radius: 33px; }
   #hint { font-size: 15px; }
 }
@@ -2029,7 +2033,13 @@ const SFX = (() => {
   }
   let jaVoice = null;
   function pickVoice() {
-    try { const vs = speechSynthesis.getVoices(); jaVoice = vs.find(v => /ja/i.test(v.lang)) || null; } catch (e) {}
+    // 日本語の声のうち、高品質なもの（拡張・プレミアム・Siri・Google）を優先
+    try {
+      const vs = speechSynthesis.getVoices().filter(v => /^ja/i.test(v.lang));
+      const score = v => (/premium|プレミアム/i.test(v.name) ? 50 : 0) + (/enhanced|拡張|高品質/i.test(v.name) ? 40 : 0) + (/siri/i.test(v.name) ? 30 : 0)
+        + (/google/i.test(v.name) ? 20 : 0) + (/kyoko|otoya|o-ren|hattori|nanami|keita/i.test(v.name) ? 10 : 0) + (v.localService ? 1 : 0);
+      jaVoice = vs.sort((a, b) => score(b) - score(a))[0] || null;
+    } catch (e) {}
   }
   try { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; } catch (e) {}
   function say(text, seat) {
@@ -2039,7 +2049,8 @@ const SFX = (() => {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice;
-      u.rate = 1.15; u.pitch = seat === 1 ? .8 : seat === 2 ? 1.35 : 1.05; u.volume = .9;
+      // はっきり聞こえるよう、普通の速さ・自然な高さ・最大音量（声の高さの差は控えめに）
+      u.rate = 1.0; u.pitch = seat === 1 ? .92 : seat === 2 ? 1.12 : 1.0; u.volume = 1;
       speechSynthesis.speak(u);
     } catch (e) {}
   }
@@ -2061,16 +2072,17 @@ document.addEventListener('pointerdown', () => SFX.unlock(), { once: true });
 // ---------- 累計記録（この端末のブラウザに保存） ----------
 const REC_KEY = 'sanma-records-v1';
 const YEN_PT = 100, YEN_CHIP = 500;
-function emptyRec() { return { games: 0, ranks: [0, 0, 0], score: 0, chips: 0, yen: 0, hands: 0, wins: 0, tsumo: 0, dealIns: 0, riichi: 0, calls: 0, winPts: 0, yakuman: 0, best: null, history: [] }; }
+function emptySeat() { return { games: 0, ranks: [0, 0, 0], score: 0, chips: 0, yen: 0, hands: 0, wins: 0, tsumo: 0, dealIns: 0, riichi: 0, winPts: 0, yakuman: 0 }; }
+function emptyRec() { return { seats: [emptySeat(), emptySeat(), emptySeat()], games: 0, ranks: [0, 0, 0], score: 0, chips: 0, yen: 0, hands: 0, wins: 0, tsumo: 0, dealIns: 0, riichi: 0, calls: 0, winPts: 0, yakuman: 0, best: null, history: [] }; }
 let recOK = true;
 function loadRec() {
-  try { const r = JSON.parse(localStorage.getItem(REC_KEY) || 'null'); return Object.assign(emptyRec(), r || {}); }
+  try { const r = Object.assign(emptyRec(), JSON.parse(localStorage.getItem(REC_KEY) || 'null') || {}); r.seats = [0, 1, 2].map(i => Object.assign(emptySeat(), (r.seats || [])[i] || {})); return r; }
   catch (e) { recOK = false; return emptyRec(); }
 }
 function saveRec(r) { try { localStorage.setItem(REC_KEY, JSON.stringify(r)); localStorage.getItem(REC_KEY); recOK = true; } catch (e) { recOK = false; } }
 let records = loadRec();
 try { localStorage.setItem('sanma-probe', '1'); localStorage.removeItem('sanma-probe'); } catch (e) { recOK = false; }
-let handLog = { riichi: false, calls: 0 };
+let handLog = { riichi: false, calls: 0, riichiSeats: [] };
 function recordHand(res) {
   records.hands++;
   if (handLog.riichi) records.riichi++;
@@ -2087,6 +2099,18 @@ function recordHand(res) {
     }
     if (res.wins.some(w => !w.tsumo && w.loser === 0)) records.dealIns++;
   }
+  // 3人それぞれの成績（同じ対局で比べる）
+  records.seats.forEach((st, s) => {
+    st.hands++;
+    if ((handLog.riichiSeats || []).includes(s)) st.riichi++;
+    if (res.type !== 'win') return;
+    for (const w of res.wins) if (w.winner === s) {
+      st.wins++; if (w.tsumo) st.tsumo++;
+      st.winPts += w.delta[s];
+      if (w.ev && (w.ev.ym || w.ev.han >= 14)) st.yakuman++;
+    }
+    if (res.wins.some(w => !w.tsumo && w.loser === s)) st.dealIns++;
+  });
   saveRec(records);
 }
 function recordGame(st) {
@@ -2099,6 +2123,12 @@ function recordGame(st) {
   records.yen += yen;
   records.history.unshift({ d: new Date().toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }), rank: me.rank, score: me.score, chips: me.chips, yen });
   records.history = records.history.slice(0, 30);
+  for (const r of st) {
+    const x = records.seats[r.seat];
+    x.games++; x.ranks[r.rank - 1]++;
+    x.score = Math.round((x.score + r.score) * 10) / 10; x.chips += r.chips;
+    x.yen += Math.round(r.score * YEN_PT + r.chips * YEN_CHIP);
+  }
   saveRec(records);
   return yen;
 }
@@ -2125,8 +2155,33 @@ function recordsHTML() {
       <tr><td>役満</td><td class="r">${r.yakuman}回</td></tr>
       ${r.best ? `<tr><td>最高打点</td><td class="r">${fmt(r.best.pts)}<br><span class="muted">${r.best.label}</span></td></tr>` : ''}
     </table>
+    ${seatsHTML()}
     ${hist ? `<div class="muted" style="margin-top:10px">最近の対局</div><table class="rec">${hist}</table>` : ''}
     ${recOK ? '' : storeNote()}`;
+}
+// 3人の比較（コンピュータの記録を取り始めてからの同じ対局）
+function seatsHTML() {
+  const S3 = records.seats;
+  if (!S3[0].hands) return '';
+  const pct = (a, b) => b ? (a / b * 100).toFixed(1) + '%' : '−';
+  const row = (label, f) => `<tr><td>${label}</td>${S3.map(x => `<td class="r">${f(x)}</td>`).join('')}</tr>`;
+  return `<div class="muted" style="margin-top:12px">3人の比較（${S3[0].games}半荘・${S3[0].hands}局）</div>
+    <table class="rec cmp">
+      <tr><td></td>${NAMES.map(n => `<td class="r"><b>${n}</b></td>`).join('')}</tr>
+      ${row('累計収支', x => `<span class="${x.yen >= 0 ? 'plus' : 'minus'}">${yenFmt(x.yen)}</span>`)}
+      ${row('1半荘平均', x => x.games ? yenFmt(Math.round(x.yen / x.games)) : '−')}
+      ${row('順位', x => x.ranks.join('/'))}
+      ${row('平均順位', x => x.games ? ((x.ranks[0] + x.ranks[1] * 2 + x.ranks[2] * 3) / x.games).toFixed(2) : '−')}
+      ${row('スコア', x => (x.score > 0 ? '+' : '') + x.score)}
+      ${row('チップ', x => (x.chips > 0 ? '+' : '') + x.chips + '枚')}
+      ${row('和了率', x => pct(x.wins, x.hands))}
+      ${row('放銃率', x => pct(x.dealIns, x.hands))}
+      ${row('リーチ率', x => pct(x.riichi, x.hands))}
+      ${row('ツモ率', x => pct(x.tsumo, x.wins))}
+      ${row('平均打点', x => x.wins ? fmt(Math.round(x.winPts / x.wins)) : '−')}
+      ${row('役満', x => x.yakuman + '回')}
+    </table>
+    <div class="muted">コンピュータの記録はこの版から取り始めています。あなたの上の累計はこれまで全部の対局です。</div>`;
 }
 function storeNote() { return `<p class="warn">この開き方では記録を保存できません（ファイルを直接開いた場合など）。ホーム画面のアプリ版やClaude内のページでは保存されます。</p>`; }
 function openRecords(back) {
@@ -2366,11 +2421,11 @@ async function onEvent(ev, d, g) {
   const myGen = gen;
   const sp = SPEED[settings.speed];
   switch (ev) {
-    case 'handStart': turnSeat = -1; lastDiscardId = -1; handLog = { riichi: false, calls: 0 }; render(); await pause(350); break;
+    case 'handStart': turnSeat = -1; lastDiscardId = -1; handLog = { riichi: false, calls: 0, riichiSeats: [] }; render(); await pause(350); break;
     case 'draw': turnSeat = d.seat; render(); if (d.seat === 0) SFX.myTurn(); else { SFX.draw(); await pause(sp.draw); } break;
     case 'discard':
       lastDiscardId = d.tile.id; render(); SFX.discard();
-      if (d.riichi) { if (d.seat === 0) handLog.riichi = true; announce(d.seat, 'リーチ'); SFX.riichi(d.seat); await pause(sp.call); }
+      if (d.riichi) { if (d.seat === 0) handLog.riichi = true; handLog.riichiSeats.push(d.seat); announce(d.seat, 'リーチ'); SFX.riichi(d.seat); await pause(sp.call); }
       else await pause(d.seat === 0 ? 120 : sp.discard);
       break;
     case 'riichi': render(); break;
