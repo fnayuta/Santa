@@ -2002,8 +2002,9 @@ const SFX = (() => {
   function ac() {
     if (!settings.sound) return null;
     try {
-      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-      if (ctx.state === 'suspended') ctx.resume();
+      if (!ctx || ctx.state === 'closed') ctx = new (window.AudioContext || window.webkitAudioContext)();
+      // iPadでは読み上げ（声）や他のアプリの音で効果音が「中断」状態になることがあるので、止まっていたら毎回再開する
+      if (ctx.state !== 'running') ctx.resume().catch(() => {});
     } catch (e) { return null; }
     return ctx;
   }
@@ -2052,6 +2053,8 @@ const SFX = (() => {
       // 喋っている途中のときだけ止める（毎回止めると次の声の出だしが遅れる）
       if (speechSynthesis.speaking || speechSynthesis.pending) speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
+      // 声が終わったら効果音を再開（iPadで声のあと効果音が消えるのを防ぐ）
+      u.onend = u.onerror = () => { try { if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); } catch (e) {} };
       u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice;
       // はっきり聞こえるよう、普通の速さ・自然な高さ・最大音量（声の高さの差は控えめに）
       u.rate = 1.0; u.pitch = seat === 1 ? .92 : seat === 2 ? 1.12 : 1.0; u.volume = 1;
@@ -2059,10 +2062,11 @@ const SFX = (() => {
     } catch (e) {}
   }
   return {
+    wake() { ac(); },
     unlock() {
       ac();
       // 音声エンジンを先に起こしておく（最初の発声が遅れないように、無音で一度だけ喋らせる）
-      try { if (settings.voice && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance('。'); u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.volume = 0; speechSynthesis.speak(u); } } catch (e) {}
+      try { if (settings.voice && 'speechSynthesis' in window) { const u = new SpeechSynthesisUtterance('。'); u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.volume = 0; u.onend = u.onerror = () => { try { if (ctx && ctx.state !== 'running') ctx.resume().catch(() => {}); } catch (e) {} }; speechSynthesis.speak(u); } } catch (e) {}
     },
     discard() { clack(.55, 2300 + Math.random() * 300); },
     draw() { clack(.12, 3200); },
@@ -2076,6 +2080,9 @@ const SFX = (() => {
   };
 })();
 document.addEventListener('pointerdown', () => SFX.unlock(), { once: true });
+// 画面を触るたび・アプリに戻るたびに、止まった効果音を再開
+document.addEventListener('pointerdown', () => SFX.wake(), { passive: true });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) SFX.wake(); });
 
 // ---------- 累計記録（この端末のブラウザに保存） ----------
 const REC_KEY = 'sanma-records-v1';
