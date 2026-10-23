@@ -34,6 +34,9 @@
   color-scheme: dark;
 }
 html, body { height: 100%; }
+html { background: var(--felt-deep); }
+/* 縦持ちのときは画面ごと90°回して、常に横画面で遊べるようにする（--W/--H は回したあとの横幅・高さ） */
+html.rot body { position: fixed; left: 0; top: 0; width: var(--W); height: var(--H); transform-origin: 0 0; transform: rotate(90deg) translateY(-100%); }
 [hidden] { display: none !important; }
 body {
   background: var(--felt-deep);
@@ -165,7 +168,7 @@ body {
 
 /* モーダル */
 #modal { position: fixed; inset: 0; background: rgba(4,14,12,.72); display: flex; align-items: center; justify-content: center; z-index: 20; padding: 16px; box-sizing: border-box; }
-.sheet { background: #f3eddc; color: #1d2421; border-radius: 16px; width: 100%; max-width: 440px; max-height: 100%; overflow-y: auto; padding: 18px 16px; box-sizing: border-box; box-shadow: 0 10px 40px rgba(0,0,0,.5); --w: min(24px, calc((min(100vw, 440px) - 64px) / 15)); }
+.sheet { background: #f3eddc; color: #1d2421; border-radius: 16px; width: 100%; max-width: 440px; max-height: 100%; overflow-y: auto; padding: 18px 16px; box-sizing: border-box; box-shadow: 0 10px 40px rgba(0,0,0,.5); --w: min(24px, calc((min(var(--W, 100vw), 440px) - 64px) / 15)); }
 .sheet h2 { font-family: var(--f-mincho); font-weight: 800; font-size: 26px; margin: 0 0 4px; text-wrap: balance; }
 .sheet h2 .sub2 { font-size: 15px; font-family: var(--f-ui); font-weight: 700; color: #5b665f; margin-left: 6px; }
 .sheet .handrow { display: flex; flex-wrap: wrap; gap: 1px; align-items: flex-end; margin: 10px 0; }
@@ -219,14 +222,14 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .kstack { display: inline-flex; flex-direction: column; align-items: center; }
 .kstack .t { margin-bottom: 0; }
 .vkstack { display: inline-flex; flex-direction: row; gap: 1px; }
-@media (orientation: landscape) {
+/* 横画面レイアウト（常に使う。縦持ちのときは画面ごと90°回して横画面にする） */
   /* 横画面：卓を画面の横幅いっぱいに使う。
      端の列＝相手の手牌（裏）と副露、その内側＝相手の河（大きめ）、中央＝点数盤と自分の河、下＝手牌 */
-  .vmelds { display: flex; }
-  .mymelds { display: inline-flex; }
-  #card1 .melds, #card2 .melds { display: none; }
-  #meinfo, .spacer, #wallinfo { display: none; }
-  #app {
+  html.land .vmelds { display: flex; }
+  html.land .mymelds { display: inline-flex; }
+  html.land #card1 .melds, html.land #card2 .melds { display: none; }
+  html.land #meinfo, html.land .spacer, html.land #wallinfo { display: none; }
+  html.land #app {
     max-width: none; padding: 34px 0 0; gap: 0; position: relative;
     --hw: min(52px, calc(var(--W) / 16), calc(var(--H) * .135));
     --th: calc(var(--H) - var(--hw) * 1.33 - var(--hw) * .2 - 50px);
@@ -240,60 +243,60 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
     grid-template-rows: var(--pw) calc(var(--th) - var(--pw)) auto;
     column-gap: 6px;
   }
-  #app::before { content: ""; grid-column: 1 / 6; grid-row: 1 / 3; border-radius: 0 0 22px 22px; z-index: 0;
+  html.land #app::before { content: ""; grid-column: 1 / 6; grid-row: 1 / 3; border-radius: 0 0 22px 22px; z-index: 0;
     background: radial-gradient(85% 90% at 50% 40%, var(--felt) 0%, #123c36 60%, #0e302b 100%); box-shadow: inset 0 0 0 1px var(--felt-line), inset 0 0 40px rgba(0,0,0,.35); }
-  #app > *, #table > *, .panel > * { z-index: 1; }
-  #table, .panel { display: contents; }
-  #table { --rw: inherit; --pw: inherit; }
+  html.land #app > *, html.land #table > *, html.land .panel > * { z-index: 1; }
+  html.land #table, html.land .panel { display: contents; }
+  html.land #table { --rw: inherit; --pw: inherit; }
   /* 端の列：相手の手牌と副露 */
-  #backs2 { grid-column: 1; grid-row: 1 / 3; justify-self: start; padding: 58px 0 calc(var(--hw) * .55) 10px; }
-  #backs1 { grid-column: 5; grid-row: 1 / 3; justify-self: end; padding: 58px 10px calc(var(--hw) * 1.1) 0; }
-  .backs { flex-direction: row; align-items: center; justify-content: center; gap: calc(var(--rw) * .3); }
-  .backs .bk { flex-direction: column; }
-  .backs .t { --w: calc(var(--rw) * 1.0 * var(--ms, 1)); }
-  .backs .vmelds .t { --w: calc(var(--rw) * 1.25 * var(--ms, 1)); }
-  #backs2, #backs1 { flex-direction: row; align-items: center; gap: calc(var(--rw) * .35); }
-  #backs2 .vmelds { align-self: flex-end; align-items: flex-end; }
-  #backs1 .vmelds { align-self: flex-start; align-items: flex-start; }
+  html.land #backs2 { grid-column: 1; grid-row: 1 / 3; justify-self: start; padding: 58px 0 calc(var(--hw) * .55) 10px; }
+  html.land #backs1 { grid-column: 5; grid-row: 1 / 3; justify-self: end; padding: 58px 10px calc(var(--hw) * 1.1) 0; }
+  html.land .backs { flex-direction: row; align-items: center; justify-content: center; gap: calc(var(--rw) * .3); }
+  html.land .backs .bk { flex-direction: column; }
+  html.land .backs .t { --w: calc(var(--rw) * 1.0 * var(--ms, 1)); }
+  html.land .backs .vmelds .t { --w: calc(var(--rw) * 1.25 * var(--ms, 1)); }
+  html.land #backs2, html.land #backs1 { flex-direction: row; align-items: center; gap: calc(var(--rw) * .35); }
+  html.land #backs2 .vmelds { align-self: flex-end; align-items: flex-end; }
+  html.land #backs1 .vmelds { align-self: flex-start; align-items: flex-start; }
   /* 相手の名前は端の列の上 */
-  #card2 { grid-column: 1; grid-row: 1; align-self: start; justify-self: start; padding: 6px 10px; z-index: 2; }
-  #card1 { grid-column: 5; grid-row: 1; align-self: start; justify-self: end; padding: 6px 10px; margin-top: 30px; z-index: 2; }
-  #card1 .ph { justify-content: flex-end; }
+  html.land #card2 { grid-column: 1; grid-row: 1; align-self: start; justify-self: start; padding: 6px 10px; z-index: 2; }
+  html.land #card1 { grid-column: 5; grid-row: 1; align-self: start; justify-self: end; padding: 6px 10px; margin-top: 30px; z-index: 2; }
+  html.land #card1 .ph { justify-content: flex-end; }
   /* 相手の河は大きく、上下いっぱい */
   /* 相手の河は点数盤の左右にぴったり並べる（点数盤と同じ高さ）。
      上家は点数盤の左上から下へ、下家は点数盤の右下から上へ打ち出す */
-  #pond2 { grid-column: 2; grid-row: 1; margin-top: 6px; }
-  #pond1 { grid-column: 4; grid-row: 1; margin-top: 6px; }
-  #pond2 .river, #pond1 .river { --w: var(--srw); width: calc(var(--srw) * 6.4 + 6px); height: var(--sph); }
+  html.land #pond2 { grid-column: 2; grid-row: 1; margin-top: 6px; }
+  html.land #pond1 { grid-column: 4; grid-row: 1; margin-top: 6px; }
+  html.land #pond2 .river, html.land #pond1 .river { --w: var(--srw); width: calc(var(--srw) * 6.4 + 6px); height: var(--sph); }
   /* 中央：点数盤と自分の河 */
-  #center { grid-column: 3; grid-row: 1; margin-top: 6px; }
-  #river0 { grid-column: 3; grid-row: 2; align-self: start; margin-top: 4px; height: auto; }
-  #hint { position: absolute; left: 12px; bottom: calc(var(--hw) * 1.5 + 8px); text-align: left; font-size: 12px; z-index: 6; }
+  html.land #center { grid-column: 3; grid-row: 1; margin-top: 6px; }
+  html.land #river0 { grid-column: 3; grid-row: 2; align-self: start; margin-top: 4px; height: auto; }
+  html.land #hint { position: absolute; left: 12px; bottom: calc(var(--hw) * 1.5 + 8px); text-align: left; font-size: 12px; z-index: 6; }
   /* メニューは右上、ボタンは手牌の右上に重ねる */
-  .top { position: absolute; top: 4px; right: 8px; min-height: 0; z-index: 3; }
-  .top .ttl { display: none; }
-  .iconbtn { padding: 2px 8px; font-size: 12px; }
-  #actions { position: absolute; right: 10px; bottom: calc(var(--hw) * 1.55 + 10px); flex-direction: row; align-items: flex-end; min-height: 0; gap: 8px; z-index: 6; }
-  .act { height: 54px; min-width: 112px; font-size: 19px; border-radius: 27px; }
-  #hand { grid-column: 1 / 6; grid-row: 3; padding: 8px 0 calc(var(--hw) * .08); min-height: calc(var(--hw) * 1.45 + 6px); }
-}
+  html.land .top { position: absolute; top: 4px; right: 8px; min-height: 0; z-index: 3; }
+  html.land .top .ttl { display: none; }
+  html.land .iconbtn { padding: 2px 8px; font-size: 12px; }
+  html.land #actions { position: absolute; right: 10px; bottom: calc(var(--hw) * 1.55 + 10px); flex-direction: row; align-items: flex-end; min-height: 0; gap: 8px; z-index: 6; }
+  html.land .act { height: 54px; min-width: 112px; font-size: 19px; border-radius: 27px; }
+  html.land #hand { grid-column: 1 / 6; grid-row: 3; padding: 8px 0 calc(var(--hw) * .08); min-height: calc(var(--hw) * 1.45 + 6px); }
+
 /* iPadなど大きい画面：牌の上限サイズを広げて画面いっぱいに使う（スマホは変えない） */
-@media (orientation: landscape) and (min-height: 600px) {
-  #app {
+/* 横画面レイアウト（常に使う。縦持ちのときは画面ごと90°回して横画面にする） */
+  html.land.big #app {
     padding-top: 44px;
     --hw: min(86px, calc(var(--W) / 17.5), calc(var(--H) * .11));
     --th: calc(var(--H) - var(--hw) * 1.33 - var(--hw) * .2 - 64px);
     /* 自分の河と相手の河を同じ大きさにする：横幅に3つの河が収まる大きさを上限に */
     --rw: min(66px, calc(var(--th) / 11.2), calc((var(--W) - 50px) / 23));
   }
-  .iconbtn { padding: 5px 14px; font-size: 16px; }
-  .top { top: 6px; right: 12px; }
+  html.land.big .iconbtn { padding: 5px 14px; font-size: 16px; }
+  html.land.big .top { top: 6px; right: 12px; }
   /* 相手の副露・抜き北は相手の河の牌と同じ大きさ */
-  .backs .t { --w: calc(var(--srw) * var(--ms, 1)); }
-  .backs .vmelds .t { --w: calc(var(--srw) * var(--ms, 1)); }
-  .act { height: 66px; min-width: 140px; font-size: 23px; border-radius: 33px; }
-  #hint { font-size: 15px; }
-}
+  html.land.big .backs .t { --w: calc(var(--srw) * var(--ms, 1)); }
+  html.land.big .backs .vmelds .t { --w: calc(var(--srw) * var(--ms, 1)); }
+  html.land.big .act { height: 66px; min-width: 140px; font-size: 23px; border-radius: 33px; }
+  html.land.big #hint { font-size: 15px; }
+
 @media (prefers-reduced-motion: reduce) { .bubble, #hand .t { transition: none; } }
 /* 牌画像: FluffyStuff/riichi-mahjong-tiles (CC0 パブリックドメイン) */
 .g0{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 400' id='svg2' version='1.1'%3E%3Cdefs id='defs4'%3E%3ClinearGradient id='linearGradient10055'%3E%3Cstop style='stop-color:%23000000;stop-opacity:1' offset='0' id='stop10057' /%3E%3C/linearGradient%3E%3Cmarker orient='auto' refY='0' refX='0' id='Arrow1Lstart' style='overflow:visible'%3E%3Cpath id='path4978' d='M 0,0 5,-5 -12.5,0 5,5 0,0 Z' style='fill:%23000000;fill-opacity:1;fill-rule:evenodd;stroke:%23ff5c00;stroke-width:1pt;stroke-opacity:1' transform='matrix(0.8,0,0,0.8,10,0)' /%3E%3C/marker%3E%3CclipPath clipPathUnits='userSpaceOnUse' id='clipPath4243'%3E%3Ccircle style='opacity:1;fill:%23000000;fill-opacity:0.3;fill-rule:nonzero;stroke:%23000000;stroke-width:19.1;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1' id='circle4245' cx='-264.7' cy='-198.2' r='294' /%3E%3C/clipPath%3E%3CclipPath clipPathUnits='userSpaceOnUse' id='clipPath7847'%3E%3Cellipse style='opacity:1;fill:%23822600;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:12;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1' id='ellipse7849' cx='394' cy='552.4' rx='349.5' ry='216' /%3E%3C/clipPath%3E%3CclipPath clipPathUnits='userSpaceOnUse' id='clipPath4243-1'%3E%3Ccircle style='opacity:1;fill:%23000000;fill-opacity:0.3;fill-rule:nonzero;stroke:%23000000;stroke-width:19.1;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1' id='circle4245-4' cx='-264.7' cy='-198.2' r='294' /%3E%3C/clipPath%3E%3CclipPath clipPathUnits='userSpaceOnUse' id='clipPath7876'%3E%3Ccircle style='opacity:1;fill:%23000000;fill-opacity:0.3;fill-rule:nonzero;stroke:%23000000;stroke-width:19.1;stroke-linecap:butt;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1' id='circle7878' cx='-264.7' cy='-198.2' r='294' /%3E%3C/clipPath%3E%3CclipPath clipPathUnits='userSpaceOnUse' id='clipPath14693'%3E%3Crect style='opacity:1;fill:%23a53c3c;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:8;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1' id='rect14695' width='131.8' height='168.8' x='-332.6' y='383.5' rx='1.3' ry='3.8' transform='matrix(1,0,0,1,0,0)' /%3E%3C/clipPath%3E%3CclipPath clipPathUnits='userSpaceOnUse' id='clipPath14952'%3E%3Cellipse style='opacity:1;fill:%23a53c3c;fill-opacity:1;fill-rule:nonzero;stroke:none;stroke-width:7;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-dashoffset:0;stroke-opacity:1' id='ellipse14954' cx='-271.3' cy='647.3' rx='69.1' ry='116.9' transform='matrix(1,0,0,1,0,0)' /%3E%3C/clipPath%3E%3Cpattern y='0' x='0' height='6' width='6' patternUnits='userSpaceOnUse' id='EMFhbasepattern' /%3E%3C/defs%3E%3Cg id='layer1' transform='translate(0,-652.4)'%3E%3Cg id='g4171'%3E%3Cpath style='fill:%23000000;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' d='m 52.9,722.3 c -17.5,-0.1 -9.1,18.9 -0.9,19.5 56.4,12.3 92.3,-11.6 131.4,-9.5 20.7,2.1 53.8,11 61.5,15.6 1.6,1 4,0.7 5,0.2 8.3,-4.4 7.7,-25.1 4.4,-36.9 -0.9,-3.5 -8.7,-7.7 -15.1,0.2 -2.1,2.1 -10.9,0.6 -12.7,-0.6 -8.4,-5.7 -31.4,-11.2 -43.6,-8.1 -46.2,9.8 -82.7,26.6 -130.1,19.6 z' id='path5527' /%3E%3Cg transform='translate(1034.3,648.9)' id='g6031'%3E%3Cpath id='path6014' d='m -973.9,230.3 c 101.5,10.8 95.1,-15.8 180.1,-18.6 18.9,-2.7 17.6,-17.5 -0.4,-16 -90.4,2.2 -58.8,34.9 -177.7,16.1 -29,-5.2 -24.3,14.6 -1.9,18.5 z' style='fill:%23b93c3c;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' /%3E%3Cpath id='path6017' d='m -882.6,187.1 c 1.3,-3.9 -8,-10.2 -13.2,-3.5 -4.8,7.5 -6.3,12.2 -10.9,17.4 -2,2.4 -2.2,7.7 -0.2,9.3 7.6,6.2 6.7,4.8 11.5,14.7 l 20.5,-1.8 c -6.5,-8.6 -7.6,-7.8 -10.1,-16.4 -1.2,-9.3 -0.8,-10.2 2.4,-19.8 z' style='fill:%23b93c3c;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' /%3E%3Cpath id='path6019' d='m -856.8,149.2 c -2.1,-2.2 -3.3,-2.9 -6.2,0 l -15.4,15.5 c -1.3,1.5 -1.4,3.7 -0.3,5 l 9.2,8.8 c 4.4,4.3 5.5,7.3 2.9,12.3 -3.4,9.6 -6,19.4 -6.1,24.7 l 21.2,-3.5 c -4,-9.8 -3.9,-12.4 2.9,-21.6 5.6,-6.3 10.9,-7.8 6,-16.4 z' style='fill:%23b93c3c;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' /%3E%3Cpath id='path6021' d='m -834.4,229.5 c -2.4,0 -5.1,0.4 -8,0.7 -26,4.2 -44.6,13.7 -87.8,12.1 -5.8,0 -10.8,3.1 -10.6,7.6 0.4,9.9 7.7,62.2 8.3,66.9 0.9,6.4 9.8,7 11,1.3 0.2,-1 0.2,-4 0.1,-8 0.5,-1.1 1.4,-2 2.3,-2.2 l 57,-5.1 c 0.6,0 1,0.5 1.3,1.3 -0.4,20.1 -0.7,39.7 -0.3,46.6 0.1,1.5 0.1,3.1 1.6,4.5 3.6,3 24.1,1.4 29.4,-1.9 1.5,-1.1 2,-1.6 2.2,-3.8 -3,-34 -0.7,-77.2 1.6,-110.9 0.6,-7.5 -2.9,-9.2 -8.1,-9.2 z m -27,16.8 c 5.7,-1.4 2,15.8 0.1,15.9 l -58.8,4.6 c -5.1,-1 -4.9,-13.1 -1.4,-13.2 26.6,-0.9 35.7,-3.2 60.2,-7.3 z m -0.1,29.2 c 1.7,-0.1 2,12.4 -0.4,12.6 l -57.3,4.8 c -4.1,-1.2 -4.4,-12 -0.8,-12.5 z' style='fill:%23b93c3c;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' /%3E%3Cpath id='path6023' d='m -881.5,246.3 -19.2,0.6 -5.3,90.6 c -0.8,10.3 4.5,20.6 11.2,20.8 l 18.7,-6.5 z' style='fill:%23b93c3c;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' /%3E%3Cpath id='path6025' d='m -942.6,354.9 0.8,8 c 54.2,18.3 41.6,-8.6 96.9,-15.2 l -0.6,-4.9 c -42.2,-3 -64.4,13.2 -97.1,12.1 z' style='fill:%23b93c3c;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' /%3E%3Cpath id='path6027' d='m -947.8,295.5 c -4.8,-14.3 -18,-11.5 -15.6,0.9 13.9,43.4 17.9,67.5 19.8,70.9 10.8,18.2 18.4,13.5 19.1,-2.4 0.1,-4.8 -14.2,-43.5 -23.3,-69.3 z' style='fill:%23b93c3c;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' /%3E%3Cpath id='path6029' d='m -990.5,324.5 c -8.4,-1.3 -7.6,9.1 -3.3,11.3 59.8,26.5 123.8,-8.9 178,-5.7 2.1,0.4 5.3,1.6 8.3,3.2 9.6,5 3.7,19.5 -1,22.5 -21.5,9.8 -16.5,0.1 -40.7,11.2 -2.3,1.5 -8.3,2.6 -10.5,1.7 -8.9,-3 -16.3,-8.1 -22.2,-12.7 l -11.2,5.6 c 6.9,8.6 17.1,12.7 25.5,16.4 6.7,3.2 14.1,2.9 19,3 25.1,0.3 48.6,-9.3 60.4,-10.8 3.5,-0.5 7.5,-6.5 9.1,-9.3 9.7,-15.9 5.7,-18.6 -1.1,-35.2 -3.8,-6.2 -15,-8 -20.8,-8.8 -60.7,-2.6 -138.3,18.8 -189.6,7.5 z' style='fill:%23b93c3c;fill-opacity:1;fill-rule:evenodd;stroke:none;stroke-width:1px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1' /%3E%3C/g%3E%3C/g%3E%3C/g%3E%3C/svg%3E")}
@@ -2218,8 +2221,9 @@ function announce(seat, text) {
   const b = document.createElement('div');
   b.className = 'bubble';
   b.textContent = text;
-  b.style.left = (r.left + r.width / 2) + 'px';
-  b.style.top = (r.top + r.height / 2) + 'px';
+  const [bx, by] = toLocal(r.left + r.width / 2, r.top + r.height / 2);
+  b.style.left = bx + 'px';
+  b.style.top = by + 'px';
   document.body.appendChild(b);
   requestAnimationFrame(() => b.classList.add('show'));
   setTimeout(() => { b.classList.remove('show'); setTimeout(() => b.remove(), 250); }, 900);
@@ -2316,7 +2320,8 @@ function render() {
     // 副露が多くて卓からはみ出すときは、その列だけ牌を縮める
     col.style.setProperty('--ms', 1);
     const cs = getComputedStyle(col), kids = [...col.children], gap = parseFloat(cs.rowGap) || 0;
-    const hs = kids.map(k => k.getBoundingClientRect().height);
+    // 画面を回していても正しく測れるよう、回転前の大きさ（offsetHeight）で測る
+    const hs = kids.map(k => k.offsetHeight);
     const need = cs.flexDirection.startsWith('row') ? Math.max(0, ...hs) : hs.reduce((a, b) => a + b, 0) + gap * Math.max(0, kids.length - 1);
     const avail = col.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
     if (avail > 0 && need > avail) col.style.setProperty('--ms', (avail / need * 0.97).toFixed(3));
@@ -2623,12 +2628,22 @@ document.addEventListener('visibilitychange', keepAwake);
 document.addEventListener('click', function once() { keepAwake(); document.removeEventListener('click', once); });
 
 // ---------- 実際の表示サイズを測る（アドレスバー分を除く） ----------
+// 画面の大きさ。縦持ち（幅＜高さ）なら画面を90°回して横画面として使う
+let ROT = false, REAL_W = 0;
 function measure() {
   const vv = window.visualViewport;
-  const W = Math.round(vv ? vv.width : window.innerWidth), H = Math.round(vv ? vv.height : window.innerHeight);
-  document.documentElement.style.setProperty('--W', W + 'px');
-  document.documentElement.style.setProperty('--H', H + 'px');
+  const rw = Math.round(vv ? vv.width : window.innerWidth), rh = Math.round(vv ? vv.height : window.innerHeight);
+  ROT = rw < rh; REAL_W = rw;
+  const W = ROT ? rh : rw, H = ROT ? rw : rh;
+  const de = document.documentElement;
+  de.classList.add('land');
+  de.classList.toggle('rot', ROT);
+  de.classList.toggle('big', H >= 600);
+  de.style.setProperty('--W', W + 'px');
+  de.style.setProperty('--H', H + 'px');
 }
+// 画面上の位置（getBoundingClientRect）→ 回した画面の中の位置
+function toLocal(x, y) { return ROT ? [y, REAL_W - x] : [x, y]; }
 measure();
 window.addEventListener('resize', () => { measure(); render(); });
 window.addEventListener('orientationchange', () => setTimeout(() => { measure(); render(); }, 250));
