@@ -290,7 +290,9 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
     --hw: min(86px, calc(var(--W) / 17.5), calc(var(--H) * .11));
     --th: calc(var(--H) - var(--hw) * 1.33 - var(--hw) * .2 - 64px);
     /* 自分の河と相手の河を同じ大きさにする：横幅に3つの河が収まる大きさを上限に */
-    --rw: min(66px, calc(var(--th) / 11.2), calc((var(--W) - 50px) / 23));
+    --rw: min(66px, calc(var(--th) / 11.2), calc((var(--W) - 50px) / 27.5));
+    /* 端の列（相手の手牌・副露・抜き北の3列ぶん）が河に重ならない幅を確保 */
+    --ew: calc(var(--rw) * 4.4);
   }
   html.land.big .iconbtn { padding: 5px 14px; font-size: 16px; }
   html.land.big .top { top: 6px; right: 12px; }
