@@ -1262,7 +1262,7 @@ class Game {
     else if (ev.han >= 14) chipItems.push({ name: '数え役満', n: this.opts.yakumanChip });
     if (ev.kin >= 2 && this.opts.goldPairChip) chipItems.push({ name: '金2枚', n: this.opts.goldPairChip });
     const base = chipItems.reduce((a, b) => a + b.n, 0);
-    if (ev.platinum && this.opts.platinumMult > 1 && base) chipItems.push({ name: 'プラチナ×' + this.opts.platinumMult, n: base * (this.opts.platinumMult - 1) });
+    if (ev.platinum && this.opts.platinumMult > 1 && base) chipItems.push({ name: 'プラチナ' + this.opts.platinumMult + '倍', n: base * (this.opts.platinumMult - 1), bonus: true });
     const chipEach = chipItems.reduce((a, b) => a + b.n, 0);
     const chipDelta = [0, 0, 0];
     if (chipEach) {
@@ -2520,7 +2520,7 @@ function winSheetHTML(r, g, idx, total) {
     : `${fmt(r.pay.ron)}点`;
   const head = ev.ym ? r.limit : `${ev.han}翻${r.limit ? ' ' + r.limit : ''}`;
   const indRow = `<div class="muted">ドラ表示 ${r.doraInd.map(t => tileHTML(t, { w: '18px' })).join('')}${r.uraInd.length ? '　裏 ' + r.uraInd.map(t => tileHTML(t, { w: '18px' })).join('') : ''}</div>`;
-  const items = r.chipItems.map(c => c.name + c.n).concat(r.tobi.map(x => '飛び賞' + x.n + '（' + names[x.from] + '）'));
+  const items = r.chipItems.map(c => c.bonus ? `${c.name}(+${c.n})` : c.name + c.n).concat(r.tobi.map(x => '飛び賞' + x.n + '（' + names[x.from] + '）'));
   const chips = items.length ? `<div class="chips">チップ ${items.join('・')}${r.chipEach ? `　和了分 ${r.tsumo ? '各' : ''}${r.chipEach}枚` : ''}</div>` : '';
   const title = (total > 1 ? `ダブロン ${idx + 1}/${total}　` : '') + (r.tsumo ? 'ツモ' : 'ロン');
   return `<h2>${title}<span class="sub2">${names[r.winner]}${r.loser != null ? ' ← ' + names[r.loser] : ''}</span></h2>
