@@ -806,6 +806,7 @@ const DEFAULT_OPTS = {
   yakumanChip: 10,
   tobiChip: 2,
   pocchi: true,
+  pao: true,         // 大三元・大四喜のパオ（責任払い）
   goldPairChip: 2,   // 金2枚を使って和了：追加チップ
   nuki4Chip: 1,      // 北4枚抜いた時点で1枚オール
   crystalMult: 2,    // クリスタル一萬を使って和了：打点2倍
@@ -890,7 +891,7 @@ class Game {
     this.uraInd = tiles.splice(0, 5);
     this.doraRevealed = 1;
     for (const p of this.players) {
-      p.hand = []; p.melds = []; p.river = []; p.nuki = [];
+      p.hand = []; p.melds = []; p.river = []; p.nuki = []; p.pao = null;
       p.riichi = false; p.doubleRiichi = false; p.ippatsu = false;
       p.riichiFuriten = false; p.tempFuriten = false; p.firstTurn = true;
       p.discardKinds = new Set(); p.riichiRiverIdx = -1; p.drawn = null;
@@ -1198,6 +1199,12 @@ class Game {
         for (const t of q.hand.filter(x => x.k === tile.k)) { if (own.length < need) own.push(t); }
         for (const t of own) this.removeFromHand(q, t);
         q.melds.push({ type: call.type === 'pon' ? 'pon' : 'minkan', k: tile.k, tiles: own.concat([tile]), from: cur, calledTile: tile });
+        // パオ（責任払い）：三元牌の3つ目・風牌の4つ目の副露を鳴かせた人
+        if (this.opts.pao && !q.pao) {
+          const isD = k => k >= 31 && k <= 33, isW = k => k >= 27 && k <= 30;
+          if (isD(tile.k) && q.melds.filter(m => isD(m.k)).length === 3) q.pao = { seat: cur, yaku: '大三元' };
+          if (isW(tile.k) && q.melds.filter(m => isW(m.k)).length === 4) q.pao = { seat: cur, yaku: '大四喜' };
+        }
         sortTiles(q.hand);
         q.firstTurn = false;
         await this.emit('call', { seat: call.j, from: cur, type: call.type, tile });
@@ -1269,6 +1276,23 @@ class Game {
       if (tsumo) { for (let i = 0; i < 3; i++) if (i !== winner) { chipDelta[i] -= chipEach; chipDelta[winner] += chipEach; } }
       else { chipDelta[loser] -= chipEach; chipDelta[winner] += chipEach; }
     }
+    // パオ：ツモならパオの人が全額（チップも2人分）、他の人からのロンならパオの人と放銃者で半分ずつ（本場は放銃者）
+    let paoSeat = null;
+    if (w.pao && ev.ym && ev.yaku.some(y => y.name === w.pao.yaku) && w.pao.seat !== winner && !(!tsumo && loser === w.pao.seat)) {
+      paoSeat = w.pao.seat;
+      const hon = this.honba * (tsumo ? this.opts.honbaTsumo * 2 : this.opts.honbaRon);
+      const pts = total - hon;
+      for (let i = 0; i < 3; i++) if (i !== winner) { delta[i] = 0; chipDelta[i] = 0; }
+      if (tsumo) {
+        delta[paoSeat] = -total;
+        chipDelta[paoSeat] = -chipEach * 2;
+      } else {
+        const half = Math.round(pts / 2 / 1000) * 1000;
+        delta[paoSeat] = -half; delta[loser] = -(pts - half) - hon;
+        const ch = Math.floor(chipEach / 2);
+        chipDelta[paoSeat] = -ch; chipDelta[loser] = -(chipEach - ch);
+      }
+    }
     for (let i = 0; i < 3; i++) { P[i].points += delta[i]; P[i].chips += chipDelta[i]; }
     const res = {
       type: 'win', winner, loser, tsumo, ev, winTile,
@@ -1277,7 +1301,7 @@ class Game {
       doraInd: this.doraInd.slice(0, this.doraRevealed),
       points: tsumo ? (isDealer ? pay.all + '∀' : pay.child + '・' + pay.dealer) : pay.ron,
       pay, limit: limitName(ev.han, ev.ym), delta, chipItems, chipEach, chipDelta, sticksWon,
-      dealerWon: isDealer, pocchiAs: ev.pocchiAs, tobi: [], mult,
+      dealerWon: isDealer, pocchiAs: ev.pocchiAs, tobi: [], mult, pao: paoSeat, paoYaku: paoSeat != null ? w.pao.yaku : null,
     };
     await this.emit('win', res);
     return res;
@@ -2528,6 +2552,7 @@ function winSheetHTML(r, g, idx, total) {
     <table>${yaku}</table>
     <div class="total">${head}　${pts}</div>
     ${r.mult > 1 ? `<div class="muted">クリスタル一萬で打点${r.mult}倍</div>` : ''}
+    ${r.pao != null ? `<div class="muted">パオ（${r.paoYaku}の責任払い）：${names[r.pao]}${r.tsumo ? 'が全額' : 'と' + names[r.loser] + 'で半分ずつ'}</div>` : ''}
     ${g.honba ? `<div class="muted">${g.honba}本場 込み</div>` : ''}${r.sticksWon ? `<div class="muted">供託 ${r.sticksWon * 1000}点</div>` : ''}
     ${chips}
     <table>${g.players.map((p, i) => `<tr><td>${names[i]}</td><td class="r">${sign(r.delta[i])}</td><td class="r">${r.chipDelta[i] ? (r.chipDelta[i] > 0 ? '+' : '') + r.chipDelta[i] + '枚' : ''}</td></tr>`).join('')}</table>`;
@@ -2599,6 +2624,7 @@ const RULES = `<div class="rules">
   <b>クリスタル一萬</b> 1萬のうち1枚（水色）。使って和了ると打点2倍（本場・供託は2倍になりません）。<br>
   <b>プラチナ九萬</b> 9萬のうち1枚（青）。使って和了ると和了時のチップが2倍（飛び賞は2倍になりません）。<br>
   <b>役</b> 数え役満は14翻から。萬子の混一色は役満。流し倍満あり（鳴かれたら無効、和了扱い）。<br>
+  <b>パオ</b> 大三元の3つ目・大四喜の4つ目を鳴かせた人が責任払い。ツモなら全額（チップも）、ほかの人からのロンなら放銃者と半分ずつ。<br>
   <b>チップ</b> 金・一発・裏ドラに付く。金2枚を使って和了ると追加で2枚。役満・数え役満は和了時10枚。北を4枚抜いた時点で1枚オール。飛ばした人に2枚（ダブロンで飛んだら2人に2枚ずつ）。<br>
   <b>その他</b> チーなし。35,000点持ち40,000点返し（オカ+15）、ウマ 20-0-20、ノーテン罰符あり、ダブロンあり（供託は放銃者の下家側）。収支はスコア1＝100円・チップ1枚＝500円で計算。
 </div>`;
