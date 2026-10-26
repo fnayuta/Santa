@@ -34,6 +34,8 @@
   color-scheme: dark;
 }
 html, body { height: 100%; }
+/* ページ全体は絶対にスクロールさせない */
+html { overflow: hidden; overscroll-behavior: none; }
 html { background: var(--felt-deep); }
 /* 縦持ちのときは画面ごと90°回して、常に横画面で遊べるようにする（--W/--H は回したあとの横幅・高さ） */
 html.rot body { position: fixed; left: 0; top: 0; width: var(--W); height: var(--H); transform-origin: 0 0; transform: rotate(90deg) translateY(-100%); }
@@ -2875,7 +2877,10 @@ document.addEventListener('click', function once() { keepAwake(); document.remov
 let ROT = false, REAL_W = 0;
 function measure() {
   const vv = window.visualViewport;
-  const rw = Math.round(vv ? vv.width : window.innerWidth), rh = Math.round(vv ? vv.height : window.innerHeight);
+  // ホーム画面アプリでは時計・電池の帯などの分（安全領域の余白）を除いた大きさを使う
+  const cs = getComputedStyle(document.documentElement);
+  const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0), padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+  const rw = Math.round((vv ? vv.width : window.innerWidth) - padX), rh = Math.round((vv ? vv.height : window.innerHeight) - padY);
   ROT = rw < rh; REAL_W = rw;
   const W = ROT ? rh : rw, H = ROT ? rw : rh;
   const de = document.documentElement;
