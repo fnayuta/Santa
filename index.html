@@ -143,6 +143,8 @@ body {
   box-shadow: inset 0 0 0 .5px rgba(80,60,20,.25), 0 var(--sl) 0 0 var(--back), 0 calc(var(--sl) + 1px) 2px rgba(0,0,0,.5);
   margin-bottom: var(--sl); }
 .t i.g { position: absolute; inset: 0; background-size: 100% 100%; background-repeat: no-repeat; }
+.t.emerald::before { content: ""; position: absolute; left: 50%; top: 50%; width: 28%; height: 21%; border-radius: 50%; background: #10a35a; transform: translate(-50%, -50%); z-index: 2; box-shadow: 0 0 0 max(1px, calc(var(--w) * .04)) #fff, 0 0 0 max(1.5px, calc(var(--w) * .07)) rgba(0,0,0,.25); }
+.t.side.emerald::before { width: 21%; height: 28%; }
 .t.pocchi::before { content: ""; position: absolute; left: 50%; top: 50%; width: 26%; height: 19.5%; border-radius: 50%; background: #d23a2e; transform: translate(-50%, -50%); z-index: 2; box-shadow: 0 0 0 1px rgba(0,0,0,.15); }
 .t.side.pocchi::before { width: 19.5%; height: 26%; }
 .t i.g27, .t i.g28, .t i.g29, .t i.g30 { filter: grayscale(1) brightness(.22); }
@@ -389,6 +391,9 @@ const KIND_NAME = (() => {
   return a.concat(['東', '南', '西', '北', '白', '發', '中']);
 })();
 const WIND_NAME = { 27: '東', 28: '南', 29: '西', 30: '北' };
+// 点数方式と七対子の扱い（Game を作ったときにそのルールに切り替わる）
+const MODE = { scoring: 'v1', chiitoi4: false };
+function setMode(opts) { MODE.scoring = opts.scoring || 'v1'; MODE.chiitoi4 = !!opts.chiitoi4; }
 
 function nextDora(k) {
   if (k === 0) return 8;
@@ -410,14 +415,15 @@ function makeRng(seed) {
   };
 }
 
-function makeTiles() {
+function makeTiles(opts) {
+  const usePocchi = !opts || opts.pocchi !== false, useEmerald = !!(opts && opts.emerald);
   const tiles = [];
   let id = 0;
   for (const k of KINDS) {
     for (let c = 0; c < 4; c++) {
       const special = (k === P5 || k === S5);
       // 1萬のうち1枚がクリスタル（和了で打点2倍）、9萬のうち1枚がプラチナ（和了でチップ2倍）
-      tiles.push({ id: id++, k, red: special && c < 3, gold: special && c === 3, pocchi: k === 31 && c === 0, crystal: k === 0 && c === 0, platinum: k === 8 && c === 0 });
+      tiles.push({ id: id++, k, red: special && c < 3, gold: special && c === 3, pocchi: usePocchi && k === 31 && c === 0, emerald: useEmerald && k === 30 && c === 0, crystal: k === 0 && c === 0, platinum: k === 8 && c === 0 });
     }
   }
   return tiles;
@@ -484,6 +490,7 @@ function shantenNormal(c, meldN) {
   return best;
 }
 function shantenChiitoi(c) {
+  if (MODE.chiitoi4) { let pr = 0; for (let k = 0; k < 34; k++) pr += c[k] >> 1; return 6 - Math.min(7, pr); }
   let pairs = 0, kinds = 0;
   for (let k = 0; k < 34; k++) { if (c[k] >= 1) kinds++; if (c[k] >= 2) pairs++; }
   return 6 - pairs + (kinds < 7 ? 7 - kinds : 0);
@@ -524,7 +531,9 @@ function decompose(c) {
   }
   return out;
 }
-function isChiitoi(c) { let p = 0; for (let k = 0; k < 34; k++) { if (c[k] === 2) p++; else if (c[k] !== 0) return false; } return p === 7; }
+function isChiitoi(c) {
+  if (MODE.chiitoi4) { let p = 0; for (let k = 0; k < 34; k++) { if (c[k] === 2 || c[k] === 4) p += c[k] / 2; else if (c[k] !== 0) return false; } return p === 7; }
+  let p = 0; for (let k = 0; k < 34; k++) { if (c[k] === 2) p++; else if (c[k] !== 0) return false; } return p === 7; }
 function isKokushi(c) { let pair = false; for (const k of YAOCHU) { if (!c[k]) return false; if (c[k] === 2) pair = true; } let n = 0; for (let k = 0; k < 34; k++) n += c[k]; return pair && n === 14; }
 function isAgariShape(c, meldN) {
   if (meldN === 0 && (isChiitoi(c) || isKokushi(c))) return true;
@@ -560,7 +569,8 @@ function evaluateWin(ctx) {
   const isYakuhaiKind = k => isDragon(k) || k === ctx.roundWind || k === ctx.seatWind;
 
   const sit = [];
-  if (ctx.doubleRiichi) sit.push(['ダブル立直', 2]); else if (ctx.riichi) sit.push(['立直', 1]);
+  if (ctx.riichi && ctx.openRiichi) sit.push(ctx.doubleRiichi ? ['ダブルオープン立直', 3] : ['オープン立直', 2]);
+  else if (ctx.doubleRiichi) sit.push(['ダブル立直', 2]); else if (ctx.riichi) sit.push(['立直', 1]);
   if (ctx.ippatsu) sit.push(['一発', 1]);
   if (menzen && ctx.tsumo) sit.push(['門前清自摸和', 1]);
   if (ctx.haitei) sit.push(['海底摸月', 1]);
@@ -598,7 +608,9 @@ function evaluateWin(ctx) {
   }
   // 七対子
   if (meldN === 0 && isChiitoi(c)) {
-    const Y = [['七対子', 2]], YM = [];
+    // 4枚使い：1組4翻・2組8翻・3組12翻
+    const quads = MODE.chiitoi4 ? c.filter(x => x === 4).length : 0;
+    const Y = [[quads ? '七対子（4枚使い' + quads + '組）' : '七対子', quads ? 4 * quads : 2]], YM = [];
     const r = globalYaku(Y, YM);
     if (r === 'honroutou') Y.push(['混老頭', 2]);
     cands.push({ Y, YM });
@@ -750,6 +762,7 @@ function basePoints(han, ym) {
 }
 function limitName(han, ym) {
   if (ym) return ym > 1 ? (ym === 2 ? 'ダブル役満' : ym + '倍役満') : '役満';
+  if (MODE.scoring === 'fu30' && han === 4) return '';
   if (han >= 14) return '数え役満';
   if (han >= 11) return '三倍満';
   if (han >= 8) return '倍満';
@@ -779,7 +792,19 @@ function limitKey(han, ym) {
   if (han >= 4) return 'mangan';
   return null;
 }
+// 30符固定・ツモ損あり：各支払いを1,000点単位に切り上げ（3,900→4,000）
+const up1000 = x => Math.ceil(x / 1000) * 1000;
+const BASE_LIMIT = { mangan: 2000, haneman: 3000, baiman: 4000, sanbaiman: 6000, yakuman: 8000 };
+function paymentsFu30(han, ym, isDealer, tsumo) {
+  let key = limitKey(han, ym);
+  if (key === 'mangan' && han === 4 && !ym) key = null; // 30符4翻は満貫ではない（切り上げで同じ額）
+  const b = key ? BASE_LIMIT[key] * (ym > 1 ? ym : 1) : 30 * Math.pow(2, 2 + han);
+  if (!tsumo) return { ron: up1000(b * (isDealer ? 6 : 4)) };
+  if (isDealer) return { all: up1000(b * 2) };
+  return { child: up1000(b), dealer: up1000(b * 2) };
+}
 function payments(han, ym, isDealer, tsumo) {
+  if (MODE.scoring === 'fu30') return paymentsFu30(han, ym, isDealer, tsumo);
   const key = limitKey(han, ym);
   const mult = ym > 1 ? ym : 1;
   if (key) {
@@ -813,12 +838,36 @@ const DEFAULT_OPTS = {
   platinumMult: 2,   // プラチナ九萬を使って和了：和了時チップ2倍
   honbaRon: 1000,
   honbaTsumo: 1000,
+  notenTotal: 2000,     // ノーテン罰符の合計
+  scoring: 'v1',        // 'v1'=40符固定ツモ損なし / 'fu30'=30符固定ツモ損あり
+  chiitoi4: false,      // 4枚使い七対子
+  emerald: false,       // エメラルド北ポッチ
+  bothX4: false,        // クリスタルとプラチナが両方あれば効果をそれぞれ4倍
+  yakumanChipTsumo: null, // 役満チップ：ツモのときの1人あたり（null=ロンと同じ）
+  openRiichi: false, openRiichiCost: 5000,
+  ankanKokushi: false,  // 暗槓に対する国士無双の和了
+  endBonus: null,       // 終了時の点数ボーナス [[下限点, 枚数], ...]（払うのは5万点未満のラス）
+  agariYame: 'auto',    // 'auto'=トップならやめ / 'choice'=オーラスの親が和了ったら続けるか選ぶ
+  drawToEnd: false,     // 王牌の補充牌までツモり切る
+};
+// 2つ目のルール（40,000点持ち・30符固定ツモ損あり など）
+const RULESETS = {
+  r2: {
+    startPoints: 40000, returnPoints: 40000, oka: 0, uma: [0, 0, 0], length: 'hanchan',
+    scoring: 'fu30', honbaRon: 2000, honbaTsumo: 1000, notenTotal: 6000,
+    pocchi: false, emerald: true, bothX4: true, yakumanChip: 10, yakumanChipTsumo: 5,
+    openRiichi: true, openRiichiCost: 5000, ankanKokushi: true, chiitoi4: true,
+    endBonus: [[110000, 20], [100000, 18], [90000, 16], [80000, 14], [70000, 12], [60000, 8], [50000, 4]],
+    agariYame: 'choice', drawToEnd: true,
+  },
 };
 
 class Game {
   constructor(agents, opts, hooks, seed) {
     this.agents = agents;
-    this.opts = Object.assign({}, DEFAULT_OPTS, opts || {});
+    const rs = opts && opts.rules ? RULESETS[opts.rules] : null;
+    this.opts = Object.assign({}, DEFAULT_OPTS, rs || {}, opts || {});
+    setMode(this.opts);
     this.hooks = hooks || {};
     this.rng = makeRng(seed);
     this.players = [0, 1, 2].map(i => ({
@@ -881,7 +930,7 @@ class Game {
   uraIndKinds() { return this.uraInd.slice(0, this.doraRevealed).map(t => t.k); }
 
   setupHand() {
-    const tiles = makeTiles();
+    const tiles = makeTiles(this.opts);
     for (let i = tiles.length - 1; i > 0; i--) {
       const j = Math.floor(this.rng() * (i + 1));
       [tiles[i], tiles[j]] = [tiles[j], tiles[i]];
@@ -892,7 +941,7 @@ class Game {
     this.doraRevealed = 1;
     for (const p of this.players) {
       p.hand = []; p.melds = []; p.river = []; p.nuki = []; p.pao = null;
-      p.riichi = false; p.doubleRiichi = false; p.ippatsu = false;
+      p.riichi = false; p.doubleRiichi = false; p.ippatsu = false; p.openRiichi = false;
       p.riichiFuriten = false; p.tempFuriten = false; p.firstTurn = true;
       p.discardKinds = new Set(); p.riichiRiverIdx = -1; p.drawn = null;
       p.safeAfterRiichi = new Set();
@@ -905,7 +954,9 @@ class Game {
     this.lastDiscard = null;
   }
 
-  drawWall() { return this.wall.shift(); }
+  drawWall() { return this.wall.length ? this.wall.shift() : this.rinshan.shift(); }
+  // まだツモれる枚数（ツモり切りルールでは補充牌も含む）
+  live() { return this.wall.length + (this.opts.drawToEnd ? this.rinshan.length : 0); }
   drawRinshan() {
     const t = this.rinshan.shift();
     if (this.wall.length > 0) this.rinshan.push(this.wall.pop());
@@ -926,7 +977,7 @@ class Game {
     return {
       concealed, melds: p.melds, winTile, tsumo: !!opt.tsumo,
       seatWind: this.seatWind(p.seat), roundWind: this.roundWind,
-      riichi: p.riichi, doubleRiichi: p.doubleRiichi, ippatsu: p.ippatsu && (p.riichi),
+      riichi: p.riichi, doubleRiichi: p.doubleRiichi, openRiichi: p.openRiichi, ippatsu: p.ippatsu && (p.riichi),
       haitei: !!opt.haitei, houtei: !!opt.houtei, rinshan: !!opt.rinshan, chankan: !!opt.chankan,
       tenhou: !!opt.tenhou, chiihou: !!opt.chiihou,
       doraInd: this.doraIndKinds(), uraInd: this.uraIndKinds(), nukiCount: p.nuki.length,
@@ -952,7 +1003,7 @@ class Game {
     let best = null, bestV = -1;
     for (const k of KINDS) {
       if (cb[k] >= 4) continue;
-      const sub = { id: p.drawn.id, k, red: false, gold: false, pocchi: true };
+      const sub = { id: p.drawn.id, k, red: false, gold: false, pocchi: true, emeraldSub: !!p.drawn.emerald };
       cb[k]++;
       const ok = isAgariShape(cb, p.melds.length);
       cb[k]--;
@@ -964,7 +1015,7 @@ class Game {
       const pay = payments(ev.han, ev.ym, p.seat === this.dealer, true);
       const tot = pay.all != null ? pay.all * 2 : pay.child + pay.dealer;
       const v = tot + (ev.kin + ev.ura + (ev.ym ? 10 * ev.ym : 0)) * 5000;
-      if (v > bestV) { bestV = v; best = ev; best.pocchiAs = k; }
+      if (v > bestV) { bestV = v; best = ev; best.pocchiAs = k; best.pocchiEmerald = !!p.drawn.emerald; }
     }
     return best;
   }
@@ -975,7 +1026,7 @@ class Game {
     const canRinshan = this.rinshan.length > 0;
     if (!ctx.afterCall) {
       o.tsumo = this.canTsumo(p, ctx.flags);
-      if (this.opts.pocchi && p.riichi && p.drawn && p.drawn.pocchi) {
+      if (p.riichi && p.drawn && ((this.opts.pocchi && p.drawn.pocchi) || (this.opts.emerald && p.drawn.emerald))) {
         const pe = this.pocchiTsumo(p, ctx.flags);
         if (pe && (!o.tsumo || pe.ym > o.tsumo.ym || (pe.ym === o.tsumo.ym && pe.han > o.tsumo.han))) o.tsumo = pe;
       }
@@ -985,7 +1036,7 @@ class Game {
       const hasNorth = p.hand.some(t => t.k === NORTH);
       o.nuki = hasNorth && canRinshan;
       const c = counts(p.hand);
-      if (canRinshan && this.wall.length > 0 && this.totalKans < 4) {
+      if (canRinshan && this.live() > 0 && this.totalKans < 4) {
         for (let k = 0; k < 34; k++) {
           if (c[k] === 4 && k !== NORTH) {
             if (p.riichi) {
@@ -1011,8 +1062,9 @@ class Game {
     }
     if (p.riichi && !ctx.afterCall && p.drawn && p.drawn.k === NORTH && o.nuki) disc = [];
     o.discardable = disc;
+    o.openRiichi = [];
     // 立直
-    if (!p.riichi && !ctx.afterCall && p.melds.every(m => m.type === 'ankan') && p.points >= 1000 && this.wall.length >= 3) {
+    if (!p.riichi && !ctx.afterCall && p.melds.every(m => m.type === 'ankan') && p.points >= 1000 && this.live() >= 3) {
       const seen = new Set();
       for (const t of disc) {
         if (seen.has(t.k)) continue;
@@ -1020,6 +1072,8 @@ class Game {
         const c = counts(p.hand); c[t.k]--;
         if (shanten(c, p.melds.length) === 0) o.riichi.push(t.k);
       }
+      // オープン立直（供託5,000点）
+      if (this.opts.openRiichi && p.points >= this.opts.openRiichiCost) o.openRiichi = o.riichi.slice();
     }
     return o;
   }
@@ -1051,9 +1105,9 @@ class Game {
       if (mode !== 'afterCall') {
         let tile;
         if (mode === 'draw') {
-          if (this.wall.length === 0) return await this.exhaustiveDraw();
+          if (this.live() === 0) return await this.exhaustiveDraw();
           tile = this.drawWall();
-          flags.haitei = this.wall.length === 0;
+          flags.haitei = this.live() === 0;
         } else {
           tile = this.drawRinshan();
           flags.rinshan = true; // カン・北抜きの補充牌で和了なら嶺上開花
@@ -1072,7 +1126,8 @@ class Game {
       if (act.type === 'tsumo') {
         return await this.finishWins([await this.settleWin(cur, null, opts.tsumo, p.drawn, true, true)]);
       }
-      if (p.riichi && opts.tsumo && act.type !== 'tsumo') p.riichiFuriten = true;
+      // 和了を見逃した立直はフリテン（エメラルド北ポッチを抜いた場合はフリテンにしない）
+      if (p.riichi && opts.tsumo && act.type !== 'tsumo' && !(act.type === 'nuki' && p.drawn && p.drawn.emerald && this.opts.emerald)) p.riichiFuriten = true;
       if (act.type === 'nuki') {
         const t = p.hand.find(x => x.k === NORTH);
         this.removeFromHand(p, t);
@@ -1092,6 +1147,23 @@ class Game {
       }
       if (act.type === 'ankan') {
         const ts = p.hand.filter(t => t.k === act.k);
+        if (this.opts.ankanKokushi) {
+          const t0 = ts[0], kRons = [];
+          for (let d = 1; d <= 2; d++) {
+            const j = (cur + d) % 3, q = P[j];
+            const ev = this.canRon(q, t0, { chankan: true });
+            if (ev && ev.yaku.some(y => y.name === '国士無双')) {
+              const r = await this.agents[j].onCall(this, j, t0, cur, { ron: ev, pon: false, minkan: false, chankan: true });
+              if (r && r.type === 'ron') { kRons.push({ j, ev }); continue; }
+              q.tempFuriten = true; if (q.riichi) q.riichiFuriten = true;
+            }
+          }
+          if (kRons.length) {
+            const rs = [];
+            for (let x = 0; x < kRons.length; x++) rs.push(await this.settleWin(kRons[x].j, cur, kRons[x].ev, t0, false, x === 0));
+            return await this.finishWins(rs);
+          }
+        }
         for (const t of ts) this.removeFromHand(p, t);
         p.melds.push({ type: 'ankan', k: act.k, tiles: ts, from: cur });
         this.totalKans++; this.noCalls = false; this.breakIppatsu();
@@ -1132,7 +1204,8 @@ class Game {
       }
       // 打牌
       const tile = act.tile;
-      const declaringRiichi = act.type === 'riichi';
+      const declaringRiichi = act.type === 'riichi' || act.type === 'openRiichi';
+      const declaringOpen = act.type === 'openRiichi';
       this.removeFromHand(p, tile);
       sortTiles(p.hand);
       const tsumogiri = p.drawn === tile;
@@ -1149,12 +1222,12 @@ class Game {
         p.doubleRiichi = wasFirst && this.noCalls;
       }
       this.lastDiscard = { seat: cur, tile };
-      await this.emit('discard', { seat: cur, tile, riichi: declaringRiichi, tsumogiri });
+      await this.emit('discard', { seat: cur, tile, riichi: declaringRiichi, open: declaringOpen, tsumogiri });
       for (const q of P) if (q.riichi && q !== p) q.safeAfterRiichi.add(tile.k);
       forbidKind = null;
 
       // 他家の反応
-      const houtei = this.wall.length === 0;
+      const houtei = this.live() === 0;
       const rons = [];
       const calls = [];
       for (let d = 1; d <= 2; d++) {
@@ -1162,8 +1235,8 @@ class Game {
         const q = P[j];
         const ev = this.canRon(q, tile, { houtei });
         const c = counts(q.hand);
-        const canPon = !q.riichi && c[tile.k] >= 2 && this.wall.length > 0;
-        const canMinkan = !q.riichi && c[tile.k] >= 3 && this.wall.length > 0 && this.rinshan.length > 0 && this.totalKans < 4;
+        const canPon = !q.riichi && c[tile.k] >= 2 && this.live() > 0;
+        const canMinkan = !q.riichi && c[tile.k] >= 3 && this.live() > 0 && this.rinshan.length > 0 && this.totalKans < 4;
         let resp = { type: 'pass' };
         if (ev || canPon || canMinkan) {
           resp = await this.agents[j].onCall(this, j, tile, cur, { ron: ev, pon: canPon, minkan: canMinkan }) || { type: 'pass' };
@@ -1184,9 +1257,10 @@ class Game {
       if (declaringRiichi) {
         p.riichiPending = false;
         p.riichi = true; p.ippatsu = true; p.riichiRiverIdx = p.river.length - 1;
-        p.points -= 1000; this.sticks++;
-        for (const d of P.flatMap(x => x.river)) { /* noop */ }
-        await this.emit('riichi', { seat: cur });
+        const cost = declaringOpen ? this.opts.openRiichiCost : 1000;
+        p.openRiichi = declaringOpen;
+        p.points -= cost; this.sticks += cost / 1000;
+        await this.emit('riichi', { seat: cur, open: declaringOpen });
       }
       if (calls.length) {
         const call = calls[0];
@@ -1224,10 +1298,11 @@ class Game {
     if (act.type === 'nuki' && opts.nuki) return act;
     if (act.type === 'ankan' && opts.ankan.includes(act.k)) return act;
     if (act.type === 'kakan' && opts.kakan.includes(act.k)) return act;
-    if ((act.type === 'discard' || act.type === 'riichi') && act.tile) {
+    if ((act.type === 'discard' || act.type === 'riichi' || act.type === 'openRiichi') && act.tile) {
       const t = p.hand.find(x => x.id === act.tile.id);
       if (t && opts.discardable.some(x => x.id === t.id)) {
         if (act.type === 'riichi' && !opts.riichi.includes(t.k)) return { type: 'discard', tile: t };
+        if (act.type === 'openRiichi' && !(opts.openRiichi || []).includes(t.k)) return { type: 'discard', tile: t };
         return { type: act.type, tile: t };
       }
     }
@@ -1242,7 +1317,8 @@ class Game {
     const w = P[winner];
     const isDealer = winner === this.dealer;
     const pay0 = payments(ev.han, ev.ym, isDealer, tsumo);
-    const mult = ev.crystal && this.opts.crystalMult ? this.opts.crystalMult : 1;
+    const both = ev.crystal && ev.platinum && this.opts.bothX4;
+    const mult = ev.crystal && this.opts.crystalMult ? (both ? 4 : this.opts.crystalMult) : 1;
     const pay = {}; for (const key in pay0) pay[key] = pay0[key] * mult;
     const delta = [0, 0, 0];
     let total = 0;
@@ -1265,11 +1341,13 @@ class Game {
     if (ev.kin && this.opts.goldChip) chipItems.push({ name: '金', n: ev.kin * this.opts.goldChip });
     if (ev.yaku.some(y => y.name === '一発') && this.opts.ippatsuChip) chipItems.push({ name: '一発', n: this.opts.ippatsuChip });
     if (ev.ura && this.opts.uraChip && !ev.ym) chipItems.push({ name: '裏', n: ev.ura * this.opts.uraChip });
-    if (ev.ym) chipItems.push({ name: '役満', n: this.opts.yakumanChip * ev.ym });
-    else if (ev.han >= 14) chipItems.push({ name: '数え役満', n: this.opts.yakumanChip });
+    const ymChip = tsumo && this.opts.yakumanChipTsumo != null ? this.opts.yakumanChipTsumo : this.opts.yakumanChip;
+    if (ev.ym) chipItems.push({ name: '役満', n: ymChip * ev.ym });
+    else if (ev.han >= 14) chipItems.push({ name: '数え役満', n: ymChip });
     if (ev.kin >= 2 && this.opts.goldPairChip) chipItems.push({ name: '金2枚', n: this.opts.goldPairChip });
     const base = chipItems.reduce((a, b) => a + b.n, 0);
-    if (ev.platinum && this.opts.platinumMult > 1 && base) chipItems.push({ name: 'プラチナ' + this.opts.platinumMult + '倍', n: base * (this.opts.platinumMult - 1), bonus: true });
+    const pm = both ? 4 : this.opts.platinumMult;
+    if (ev.platinum && pm > 1 && base) chipItems.push({ name: 'プラチナ' + pm + '倍', n: base * (pm - 1), bonus: true });
     const chipEach = chipItems.reduce((a, b) => a + b.n, 0);
     const chipDelta = [0, 0, 0];
     if (chipEach) {
@@ -1301,7 +1379,7 @@ class Game {
       doraInd: this.doraInd.slice(0, this.doraRevealed),
       points: tsumo ? (isDealer ? pay.all + '∀' : pay.child + '・' + pay.dealer) : pay.ron,
       pay, limit: limitName(ev.han, ev.ym), delta, chipItems, chipEach, chipDelta, sticksWon,
-      dealerWon: isDealer, pocchiAs: ev.pocchiAs, tobi: [], mult, pao: paoSeat, paoYaku: paoSeat != null ? w.pao.yaku : null,
+      dealerWon: isDealer, pocchiAs: ev.pocchiAs, pocchiEmerald: !!ev.pocchiEmerald, tobi: [], mult, pao: paoSeat, paoYaku: paoSeat != null ? w.pao.yaku : null,
     };
     await this.emit('win', res);
     return res;
@@ -1349,8 +1427,9 @@ class Game {
     const tenpai = P.map(p => shanten(counts(p.hand), p.melds.length) === 0);
     const n = tenpai.filter(Boolean).length;
     const delta = [0, 0, 0];
-    if (n === 1) { for (let i = 0; i < 3; i++) delta[i] = tenpai[i] ? 2000 : -1000; }
-    else if (n === 2) { for (let i = 0; i < 3; i++) delta[i] = tenpai[i] ? 1000 : -2000; }
+    const NT = this.opts.notenTotal;
+    if (n === 1) { for (let i = 0; i < 3; i++) delta[i] = tenpai[i] ? NT : -NT / 2; }
+    else if (n === 2) { for (let i = 0; i < 3; i++) delta[i] = tenpai[i] ? NT / 2 : -NT; }
     for (let i = 0; i < 3; i++) P[i].points += delta[i];
     const res = { type: 'draw', tenpai, delta, hands: P.map(p => p.hand.slice()), dealerTenpai: tenpai[this.dealer] };
     await this.emit('exhaustive', res);
@@ -1365,7 +1444,7 @@ class Game {
     const busted = this.players.some(p => p.points < 0);
     if (busted) return true;
     if (renchan) {
-      if (this.round === this.lastRound) {
+      if (this.round === this.lastRound && this.opts.agariYame !== 'choice') {
         // オーラス親がトップならアガリやめ
         const d = this.players[this.dealer];
         const top = this.players.every(p => p === d || d.points > p.points);
@@ -1375,6 +1454,24 @@ class Game {
     }
     this.round++;
     return this.round > this.lastRound;
+  }
+
+  // 終了時の点数ボーナス：50,000点台以上で終えた人がもらい、50,000点に届かなかったラスが払う
+  applyEndBonus() {
+    this.endBonus = [];
+    const B = this.opts.endBonus;
+    if (!B) return;
+    const P = this.players;
+    const fromStart = i => (i - this.startSeat + 3) % 3;
+    const last = [0, 1, 2].sort((a, b) => P[a].points - P[b].points || fromStart(b) - fromStart(a))[0];
+    if (P[last].points >= B[B.length - 1][0]) return;
+    for (let i = 0; i < 3; i++) {
+      if (i === last) continue;
+      const hit = B.find(([min]) => P[i].points >= min);
+      if (!hit) continue;
+      P[i].chips += hit[1]; P[last].chips -= hit[1];
+      this.endBonus.push({ seat: i, from: last, n: hit[1] });
+    }
   }
 
   standings() {
@@ -1396,9 +1493,16 @@ class Game {
       const res = await this.playHand();
       this.log.push(res);
       if (this.hooks.handEnd) await this.hooks.handEnd(res, this);
+      // オーラスの親が和了ったら、続けるかやめるかを親が選ぶ
+      if (this.opts.agariYame === 'choice' && res.type === 'win' && res.dealerWon && this.round === this.lastRound && !this.players.some(p => p.points < 0)) {
+        const ag = this.agents[this.dealer];
+        const stop = ag.onAgariYame ? await ag.onAgariYame(this) : false;
+        if (stop) break;
+      }
       const end = this.advance(res);
       if (end) break;
     }
+    this.applyEndBonus();
     this.ended = true;
     const st = this.standings();
     if (this.hooks.gameEnd) await this.hooks.gameEnd(st, this);
@@ -1409,7 +1513,7 @@ class Game {
 G.SANMA = {
   KINDS, NORTH, P5, S5, KIND_NAME, WIND_NAME, isNum, isYaochu, isSimple, isDragon, isWind, nextDora,
   makeTiles, sortTiles, counts, shanten, shantenNormal, decompose, isAgariShape, waitsOf,
-  evaluateWin, basePoints, payments, limitName, Game, DEFAULT_OPTS, makeRng,
+  evaluateWin, basePoints, payments, limitName, Game, DEFAULT_OPTS, RULESETS, makeRng, MODE, setMode,
 };
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -1827,6 +1931,9 @@ class CpuAgent {
     let r = 0;
     for (let j = 0; j < 3; j++) {
       if (j === seat) continue;
+      // オープン立直の相手は待ちが見えている：待ち牌なら確実に当たり、それ以外は安全
+      const q = game.players[j];
+      if (q.openRiichi) { if (!q.riichiFuriten && game.waits(q).includes(k)) r += ctx.losses[j] * 1.2; continue; }
       r += hitProb(ctx.js[j], tileCat(game, k, j, ctx.vis, ctx.dk), game.readFeat(j, k)) * this.P.dangerCalib * ctx.losses[j];
     }
     return r;
@@ -1908,11 +2015,24 @@ class CpuAgent {
         const pwR = st.pw;
         const evR = pwR * st.V - (1 - pwR) * 100;
         const evD = dama ? Math.min(0.97, pwR * P.damaWinBoost) * dama : -Infinity;
-        if (evR >= evD && T >= 1) return { type: 'riichi', tile: rc.tile };
-        if (!dama) return { type: 'riichi', tile: rc.tile };
+        if (evR >= evD && T >= 1) return this.riichiAct(game, seat, opts, rc.tile);
+        if (!dama) return this.riichiAct(game, seat, opts, rc.tile);
       }
     }
     return { type: 'discard', tile: best.tile };
+  }
+
+  // 立直のしかた：相手2人とも立直中（待ちを避けられない）ならオープン立直で1翻上げる
+  riichiAct(game, seat, opts, tile) {
+    const others = game.players.filter((q, j) => j !== seat);
+    if ((opts.openRiichi || []).includes(tile.k) && others.every(q => q.riichi)) return { type: 'openRiichi', tile };
+    return { type: 'riichi', tile };
+  }
+
+  // オーラスの親の和了止め：トップならやめる
+  onAgariYame(game) {
+    const d = game.players[game.dealer];
+    return game.players.every(p => p === d || d.points > p.points);
   }
 
   // ダマで和了ったときの価値（役がなければ null）
@@ -1991,13 +2111,14 @@ function tileHTML(t, o = {}) {
   if (o.side) cls.push('side');
   if (t && t.gold && !o.back) cls.push('gold');
   if (t && t.pocchi && !o.back) cls.push('pocchi');
+  if (t && t.emerald && !o.back) cls.push('emerald');
   if (t && t.crystal && !o.back) cls.push('crystal');
   if (t && t.platinum && !o.back) cls.push('platinum');
   if (o.back || !t) cls.push('back');
   if (o.cls) cls.push(o.cls);
   const style = o.w ? ` style="--w:${o.w}"` : '';
   const data = o.id != null ? ` data-id="${o.id}"` : '';
-  const label = t && !o.back ? ` title="${S.KIND_NAME[t.k]}${t.gold ? '(金)' : t.crystal ? '(クリスタル)' : t.platinum ? '(プラチナ)' : t.red ? '(赤)' : ''}"` : '';
+  const label = t && !o.back ? ` title="${S.KIND_NAME[t.k]}${t.gold ? '(金)' : t.emerald ? '(エメラルド)' : t.crystal ? '(クリスタル)' : t.platinum ? '(プラチナ)' : t.red ? '(赤)' : ''}"` : '';
   const inner = t && !o.back ? `<i class="g g${t.gold ? 'g' + t.k : t.crystal ? 'c' + t.k : t.platinum ? 'p' + t.k : t.red ? 'r' + t.k : t.k}"></i>` : '';
   return `<span class="${cls.join(' ')}"${style}${data}${label}>${inner}</span>`;
 }
@@ -2005,11 +2126,17 @@ const kindTile = k => ({ k, red: false, gold: false });
 const fmt = n => n.toLocaleString('ja-JP');
 const sign = n => n > 0 ? `<span class="plus">+${fmt(n)}</span>` : n < 0 ? `<span class="minus">${fmt(n)}</span>` : '±0';
 
+// ---------- ルール（このページがどちらのゲームか） ----------
+const RS = (typeof window !== 'undefined' && window.SANMA_RULES) || null;
+const R2 = RS === 'r2';
+const KEYP = RS ? 'sanma-' + RS + '-' : 'sanma-';
+const TITLE = R2 ? '三麻 4万点持ち' : '三麻 赤3金1';
+
 // ---------- 設定 ----------
 const DEF = { length: 'hanchan', goldChip: 1, speed: 'normal', autoNuki: true, autoWin: false, sound: true, voice: true };
 let settings = Object.assign({}, DEF);
-try { const s = JSON.parse(localStorage.getItem('sanma-settings') || 'null'); if (s) settings = Object.assign(settings, s); } catch (e) {}
-function saveSettings() { try { localStorage.setItem('sanma-settings', JSON.stringify(settings)); } catch (e) {} }
+try { const s = JSON.parse(localStorage.getItem(KEYP + 'settings') || 'null'); if (s) settings = Object.assign(settings, s); } catch (e) {}
+function saveSettings() { try { localStorage.setItem(KEYP + 'settings', JSON.stringify(settings)); } catch (e) {} }
 const SPEED = { normal: { discard: 520, draw: 120, call: 750 }, fast: { discard: 260, draw: 40, call: 450 } };
 
 // ---------- 状態 ----------
@@ -2044,6 +2171,18 @@ const human = {
       }
       pendingTurn = { opts, ctx, done };
       render();
+    });
+  },
+  // オーラスの親で和了ったとき：続けるかやめるか
+  onAgariYame(g) {
+    const myGen = gen;
+    return new Promise(res => {
+      showModal(`<h2>和了止め</h2><p class="muted">オーラスの親で和了りました。ここで終局しますか？</p>
+        <table class="stand">${g.players.map((p, i) => `<tr><td>${NAMES[i]}</td><td class="r">${fmt(p.points)}</td><td class="r">${p.chips > 0 ? '+' : ''}${p.chips}枚</td></tr>`).join('')}</table>
+        <button class="btn" type="button" id="yameYes">やめる（終局）</button>
+        <button class="btn alt" type="button" id="yameNo">続ける（連荘）</button>`);
+      $('yameYes').onclick = () => { SFX.tap(); hideModal(); if (myGen === gen) res(true); };
+      $('yameNo').onclick = () => { SFX.tap(); hideModal(); if (myGen === gen) res(false); };
     });
   },
   onCall(g, seat, tile, from, o) {
@@ -2133,7 +2272,7 @@ const SFX = (() => {
     draw() { clack(.12, 3200); },
     myTurn() { tone([880], .08, 'sine', .07); },
     call(text, seat) { say(text, seat); tone([392, 523], .14, 'triangle', .16, .07); },
-    riichi(seat) { say('リーチ', seat); tone([523, 659, 784], .18, 'triangle', .18, .07); },
+    riichi(seat, open) { say(open ? 'オープンリーチ' : 'リーチ', seat); tone([523, 659, 784], .18, 'triangle', .18, .07); },
     win(text, seat, big) { say(text, seat); tone(big ? [523, 659, 784, 1047, 1319] : [523, 659, 784, 1047], .28, 'triangle', .2, .09); },
     nuki(seat) { say('ぬき', seat); clack(.4, 1900); },
     draw2() { tone([392, 330], .3, 'sine', .12, .16); },
@@ -2146,7 +2285,7 @@ document.addEventListener('pointerdown', () => SFX.wake(), { passive: true });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) SFX.wake(); });
 
 // ---------- 累計記録（この端末のブラウザに保存） ----------
-const REC_KEY = 'sanma-records-v1';
+const REC_KEY = KEYP + 'records-v1';
 const YEN_PT = 100, YEN_CHIP = 500;
 function emptySeat() { return { games: 0, ranks: [0, 0, 0], score: 0, chips: 0, yen: 0, hands: 0, wins: 0, tsumo: 0, dealIns: 0, riichi: 0, winPts: 0, yakuman: 0 }; }
 function emptyRec() { return { seats: [emptySeat(), emptySeat(), emptySeat()], games: 0, ranks: [0, 0, 0], score: 0, chips: 0, yen: 0, hands: 0, wins: 0, tsumo: 0, dealIns: 0, riichi: 0, calls: 0, winPts: 0, yakuman: 0, best: null, history: [] }; }
@@ -2349,7 +2488,7 @@ function myMeldBlock(p, w) {
 function cardHTML(i) {
   const p = game.players[i];
   const tags = [];
-  if (p.riichi) tags.push('<span class="tag riichi">リーチ</span>');
+  if (p.riichi) tags.push(`<span class="tag riichi">${p.openRiichi ? 'オープン' : 'リーチ'}</span>`);
   if (p.chips) tags.push(`<span class="tag chip">${p.chips > 0 ? '+' : ''}${p.chips}枚</span>`);
   const name = `<span class="nm">${p.name}</span>`;
   const head = i === 1 ? tags.join('') + name : name + tags.join('');
@@ -2372,7 +2511,10 @@ function render() {
     c.innerHTML = cardHTML(i);
     c.classList.toggle('turn', turnSeat === i);
     const n = g.players[i].hand.length;
-    const backs = `<span class="bk">${Array.from({ length: n }, () => tileHTML(null, { back: true, side: true })).join('')}</span>`;
+    const op = g.players[i];
+    const backs = op.openRiichi
+      ? `<span class="bk">${S.sortTiles(op.hand.slice()).map(t => tileHTML(t, { side: true, cls: i === 2 ? 'cw' : '' })).join('')}</span>`
+      : `<span class="bk">${Array.from({ length: n }, () => tileHTML(null, { back: true, side: true })).join('')}</span>`;
     const col = $('backs' + i);
     col.innerHTML = i === 2 ? backs + vMeldsHTML(g.players[i], i) : vMeldsHTML(g.players[i], i) + backs;
     // 副露が多くて卓からはみ出すときは、その列だけ牌を縮める
@@ -2390,7 +2532,7 @@ function render() {
   const dora = [];
   for (let i = 0; i < 5; i++) dora.push(i < g.doraRevealed ? tileHTML(g.doraInd[i]) : tileHTML(null, { back: true }));
   $('center').innerHTML = `<div class="rnd">${rname}</div>
-    <div class="meta">残 ${g.wall.length}</div>
+    <div class="meta">残 ${g.live ? g.live() : g.wall.length}</div>
     <div class="dora">${dora.join('')}</div>
     <div class="meta">${g.honba}本場・供託${g.sticks}</div>
     ${seatScore(0, 'b')}${seatScore(2, 'l')}${seatScore(1, 'r')}`;
@@ -2411,7 +2553,7 @@ function renderHand() {
   const rest = S.sortTiles(me.hand.filter(t => t !== drawn).slice());
   const pt = pendingTurn;
   const can = new Set(pt ? pt.opts.discardable.map(t => t.id) : []);
-  const riichiKinds = pt && riichiMode ? new Set(pt.opts.riichi) : null;
+  const riichiKinds = pt && riichiMode ? new Set(riichiMode === 'open' ? pt.opts.openRiichi : pt.opts.riichi) : null;
   const html = [];
   const one = t => {
     const cls = [];
@@ -2459,7 +2601,9 @@ function renderActions() {
       else if (opts.nuki) btn('抜き', '', () => d({ type: 'nuki' }));
       return;
     }
-    if (opts.riichi.length) btn('リーチ', riichiMode ? 'on' : '', () => { riichiMode = !riichiMode; if (riichiMode && selectedId != null) { const t = me.hand.find(x => x.id === selectedId); if (!t || !opts.riichi.includes(t.k)) selectedId = null; } render(); });
+    const toggle = mode => { riichiMode = riichiMode === mode ? false : mode; const ks = riichiMode === 'open' ? opts.openRiichi : opts.riichi; if (riichiMode && selectedId != null) { const t = me.hand.find(x => x.id === selectedId); if (!t || !ks.includes(t.k)) selectedId = null; } render(); };
+    if (opts.riichi.length) btn('リーチ', riichiMode === 'riichi' ? 'on' : '', () => toggle('riichi'));
+    if (opts.openRiichi && opts.openRiichi.length) btn('オープン', riichiMode === 'open' ? 'on' : '', () => toggle('open'));
     if (opts.nuki) btn('抜き', '', () => d({ type: 'nuki' }));
     for (const k of opts.ankan) btn('カン ' + S.KIND_NAME[k], '', () => d({ type: 'ankan', k }));
     for (const k of opts.kakan) btn('加槓 ' + S.KIND_NAME[k], '', () => d({ type: 'kakan', k }));
@@ -2468,7 +2612,7 @@ function renderActions() {
       const rest = me.hand.filter(t => t.id !== selectedId);
       const wt = waitsText(rest, me.melds.length);
       hint.innerHTML = wt ? `切ると待ち ${wt.txt}` : 'もう一度タップで打牌';
-    } else hint.innerHTML = riichiMode ? '<b>リーチ</b>する牌を選んでください' : 'あなたの番です';
+    } else hint.innerHTML = riichiMode ? `<b>${riichiMode === 'open' ? 'オープンリーチ（供託5,000点）' : 'リーチ'}</b>する牌を選んでください` : 'あなたの番です';
     return;
   }
   // 待ち表示
@@ -2488,8 +2632,8 @@ $('hand').addEventListener('click', e => {
   const { opts, done } = pendingTurn;
   const t = opts.discardable.find(x => x.id === id);
   if (!t) return;
-  if (riichiMode && !opts.riichi.includes(t.k)) return;
-  if (selectedId === id) { done({ type: riichiMode ? 'riichi' : 'discard', tile: t }); return; }
+  if (riichiMode && !(riichiMode === 'open' ? opts.openRiichi : opts.riichi).includes(t.k)) return;
+  if (selectedId === id) { done({ type: riichiMode === 'open' ? 'openRiichi' : riichiMode ? 'riichi' : 'discard', tile: t }); return; }
   selectedId = id;
   render();
 });
@@ -2503,7 +2647,7 @@ async function onEvent(ev, d, g) {
     case 'draw': turnSeat = d.seat; render(); if (d.seat === 0) SFX.myTurn(); else { SFX.draw(); await pause(sp.draw); } break;
     case 'discard':
       lastDiscardId = d.tile.id; render(); SFX.discard();
-      if (d.riichi) { if (d.seat === 0) handLog.riichi = true; handLog.riichiSeats.push(d.seat); SFX.riichi(d.seat); announce(d.seat, 'リーチ'); await pause(sp.call); }
+      if (d.riichi) { if (d.seat === 0) handLog.riichi = true; handLog.riichiSeats.push(d.seat); SFX.riichi(d.seat, d.open); announce(d.seat, d.open ? 'オープンリーチ' : 'リーチ'); await pause(sp.call); }
       else await pause(d.seat === 0 ? 120 : sp.discard);
       break;
     case 'riichi': render(); break;
@@ -2548,10 +2692,10 @@ function winSheetHTML(r, g, idx, total) {
   const chips = items.length ? `<div class="chips">チップ ${items.join('・')}${r.chipEach ? `　和了分 ${r.tsumo ? '各' : ''}${r.chipEach}枚` : ''}</div>` : '';
   const title = (total > 1 ? `ダブロン ${idx + 1}/${total}　` : '') + (r.tsumo ? 'ツモ' : 'ロン');
   return `<h2>${title}<span class="sub2">${names[r.winner]}${r.loser != null ? ' ← ' + names[r.loser] : ''}</span></h2>
-    <div class="handrow">${tiles}</div>${r.pocchiAs != null ? `<div class="muted">白ポッチを ${S.KIND_NAME[r.pocchiAs]} として和了</div>` : ''}${indRow}
+    <div class="handrow">${tiles}</div>${r.pocchiAs != null ? `<div class="muted">${r.pocchiEmerald ? 'エメラルド北ポッチ' : '白ポッチ'}を ${S.KIND_NAME[r.pocchiAs]} として和了</div>` : ''}${indRow}
     <table>${yaku}</table>
     <div class="total">${head}　${pts}</div>
-    ${r.mult > 1 ? `<div class="muted">クリスタル一萬で打点${r.mult}倍</div>` : ''}
+    ${r.mult > 1 ? `<div class="muted">${r.mult === 4 ? 'クリスタル一萬とプラチナ九萬で打点4倍' : 'クリスタル一萬で打点' + r.mult + '倍'}</div>` : ''}
     ${r.pao != null ? `<div class="muted">パオ（${r.paoYaku}の責任払い）：${names[r.pao]}${r.tsumo ? 'が全額' : 'と' + names[r.loser] + 'で半分ずつ'}</div>` : ''}
     ${g.honba ? `<div class="muted">${g.honba}本場 込み</div>` : ''}${r.sticksWon ? `<div class="muted">供託 ${r.sticksWon * 1000}点</div>` : ''}
     ${chips}
@@ -2596,7 +2740,8 @@ function gameEnd(st, g, again) {
     <table><tr class="muted"><td></td><td></td><td class="r">点数</td><td class="r">スコア</td><td class="r">チップ</td><td class="r">収支</td></tr>${rows}</table>
     <div class="recbig ${myYen >= 0 ? 'plus' : 'minus'}" style="font-size:24px;margin-top:10px">今回 ${yenFmt(myYen)}</div>
     <div class="muted" style="text-align:center">累計 ${yenFmt(records.yen)}（${records.games}半荘）</div>
-    <p class="muted">スコアは 35,000点持ち40,000点返し・トップにオカ+15・ウマ 20-0-20（1位+20、2位±0、3位−20）。スコア1＝100円、チップ1枚＝500円。</p>
+    ${R2 && g.endBonus && g.endBonus.length ? `<div class="chips">終了ボーナス ${g.endBonus.map(b => `${g.players[b.seat].name} +${b.n}枚（${g.players[b.from].name}から）`).join('・')}</div>` : ''}
+    <p class="muted">${R2 ? 'スコアは 40,000点持ち・順位点なし（点数−40,000）÷1,000。' : 'スコアは 35,000点持ち40,000点返し・トップにオカ+15・ウマ 20-0-20（1位+20、2位±0、3位−20）。'}スコア1＝100円、チップ1枚＝500円。</p>
     <button class="btn" type="button" id="againBtn">もう一度</button>
     <button class="btn alt" type="button" id="recBtn2">成績を見る</button>`);
   $('againBtn').onclick = () => { hideModal(); openStart(); };
@@ -2628,8 +2773,20 @@ const RULES = `<div class="rules">
   <b>チップ</b> 金・一発・裏ドラに付く。金2枚を使って和了ると追加で2枚。役満・数え役満は和了時10枚。北を4枚抜いた時点で1枚オール。飛ばした人に2枚（ダブロンで飛んだら2人に2枚ずつ）。<br>
   <b>その他</b> チーなし。35,000点持ち40,000点返し（オカ+15）、ウマ 20-0-20、ノーテン罰符あり、ダブロンあり（供託は放銃者の下家側）。収支はスコア1＝100円・チップ1枚＝500円で計算。
 </div>`;
+const RULES2 = `<div class="rules">
+  <b>基本</b> サンマ・半荘戦・40,000点持ち・順位点なし。途中流局なし。チーなし。ダブロンあり。<br>
+  <b>牌</b> 萬子は1・9のみの108枚。5筒・5索は各<b>赤3枚・金1枚</b>（すべてドラ1）。<br>
+  <b>特殊牌</b> <b>金</b>：和了時1枚。<b>クリスタル一萬</b>（水色）：和了時打点2倍。<b>プラチナ九萬</b>（青）：和了時チップ2倍。クリスタルとプラチナが両方あると、それぞれ4倍。<b>エメラルド北ポッチ</b>（緑の点）：リーチ後にツモるとオールマイティ。抜いてもよく、抜いてもフリテンになりません。<br>
+  <b>点数</b> <b>30符固定</b>・<b>ツモ損あり</b>・100の位は切り上げ（3,900→4,000）。満貫は5翻から。1本場はロン2,000点・ツモ各1,000点。ノーテン罰符は場に6,000点。<br>
+  <b>役</b> 数え役満は14翻から。萬子の混一色は役満。流し倍満あり。<b>4枚使い七対子</b>あり（カンした場合は不可）：4枚が1組で4翻・2組で8翻・3組で12翻。<b>オープンリーチ</b>あり（2翻、手牌をすべて公開、供託5,000点）。暗槓に対する国士無双の和了あり。<br>
+  <b>リーチ</b> 0点ではリーチできません。<br>
+  <b>チップ</b> 一発・金・裏ドラに1枚。金2枚で和了るとさらに2枚。役満（数え役満を含む）はロンなら放銃者から10枚、ツモなら5枚ずつ。北を4枚抜いた時点で各1枚。飛ばした人に2枚。<br>
+  <b>パオ</b> 大三元の3つ目・大四喜の4つ目を鳴かせた人が責任払い。<br>
+  <b>終局</b> 誰かが0点未満でトビ終了。オーラスの親は和了ったら続けるかやめるかを選べます（和了止め）。終了時に50,000点台なら4枚、60,000点台8枚、70,000点台12枚、80,000点台14枚、90,000点台16枚、100,000点台18枚、110,000点以上20枚を、50,000点に届かなかったラスからもらえます。<br>
+  <b>収支</b> スコア1（1,000点）＝100円・チップ1枚＝500円で計算。
+</div>`;
 function settingsHTML(inGame) {
-  return `${inGame ? '' : `<div class="opt">対局の長さ ${seg('length', [['tonpu', '東風'], ['hanchan', '半荘']])}</div>
+  return `${inGame || R2 ? '' : `<div class="opt">対局の長さ ${seg('length', [['tonpu', '東風'], ['hanchan', '半荘']])}</div>
     <div class="opt">金のチップ枚数 ${seg('goldChip', [[1, '1枚'], [2, '2枚'], [3, '3枚'], [5, '5枚']])}</div>`}
     <div class="opt">CPUの速さ ${seg('speed', [['normal', 'ふつう'], ['fast', 'はやい']])}</div>
     <div class="opt">効果音 ${seg('sound', [[true, 'あり'], [false, 'なし']])}</div>
@@ -2637,7 +2794,7 @@ function settingsHTML(inGame) {
 }
 function openStart() {
   const sum = records.games ? `<div class="recline">累計 <b class="${records.yen >= 0 ? 'plus' : 'minus'}">${yenFmt(records.yen)}</b>　${records.games}半荘・平均順位 ${((records.ranks[0] + records.ranks[1] * 2 + records.ranks[2] * 3) / records.games).toFixed(2)}</div>` : '';
-  const m = showModal(`<h2>三麻 赤3金1</h2><div class="muted">CPU 2人と対局</div>${sum}${RULES}${settingsHTML(false)}
+  const m = showModal(`<h2>${TITLE}</h2><div class="muted">CPU 2人と対局</div>${sum}${R2 ? RULES2 : RULES}${settingsHTML(false)}
     <button class="btn" type="button" id="startBtn">対局開始</button>
     <button class="btn alt" type="button" id="recBtn">成績</button>`);
   bindSegs(m);
@@ -2646,7 +2803,7 @@ function openStart() {
 }
 $('menuBtn').onclick = () => {
   if (!$('modal').hidden) return;
-  const m = showModal(`<h2>メニュー</h2>${settingsHTML(true)}${RULES}
+  const m = showModal(`<h2>メニュー</h2>${settingsHTML(true)}${R2 ? RULES2 : RULES}
     <button class="btn" type="button" id="closeBtn">対局に戻る</button>
     <button class="btn alt" type="button" id="menuRec">成績</button>
     <button class="btn alt" type="button" id="restartBtn">対局をやめて最初から</button>`);
@@ -2665,7 +2822,7 @@ function startGame() {
   const myGen = gen;
   pendingTurn = pendingCall = null; selectedId = null; riichiMode = false;
   const agents = [human, new AI.CpuAgent(NAMES[1]), new AI.CpuAgent(NAMES[2])];
-  game = new S.Game(agents, { length: settings.length, goldChip: settings.goldChip }, { event: onEvent, handEnd, gameEnd, pause });
+  game = new S.Game(agents, R2 ? { rules: 'r2' } : { length: settings.length, goldChip: settings.goldChip }, { event: onEvent, handEnd, gameEnd, pause });
   game.run().catch(e => { if (!(e instanceof Aborted)) { console.error(e); if (myGen === gen) showModal(`<h2>エラー</h2><p class="muted">${String(e && e.message || e)}</p><button class="btn" type="button" onclick="location.reload()">再読み込み</button>`); } });
 }
 
