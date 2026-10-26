@@ -2220,7 +2220,7 @@ const SFX = (() => {
   function ac() {
     if (!settings.sound) return null;
     try {
-      if (!ctx || ctx.state === 'closed') ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!ctx || ctx.state === 'closed') { const AC = window.AudioContext || window.webkitAudioContext; try { ctx = new AC({ latencyHint: 'interactive' }); } catch (e) { ctx = new AC(); } }
       // iPadでは読み上げ（声）や他のアプリの音で効果音が「中断」状態になることがあるので、止まっていたら毎回再開する
       if (ctx.state !== 'running') ctx.resume().catch(() => {});
     } catch (e) { return null; }
@@ -2305,12 +2305,16 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) SFX.
 // ---------- 累計記録（この端末のブラウザに保存） ----------
 const REC_KEY = KEYP + 'records-v1';
 // 収支の換算：1つ目はスコア1＝100円・チップ1枚＝500円。2つ目はチップだけ（1枚＝100円、点数ではお金は動かない）
-const YEN_PT = R2 ? 0 : 100, YEN_CHIP = R2 ? 100 : 500;
+const YEN_PT = R2 ? 0 : 100, YEN_CHIP = R2 ? 200 : 500;
 function emptySeat() { return { games: 0, ranks: [0, 0, 0], score: 0, chips: 0, yen: 0, hands: 0, wins: 0, tsumo: 0, dealIns: 0, riichi: 0, winPts: 0, yakuman: 0 }; }
 function emptyRec() { return { seats: [emptySeat(), emptySeat(), emptySeat()], games: 0, ranks: [0, 0, 0], score: 0, chips: 0, yen: 0, hands: 0, wins: 0, tsumo: 0, dealIns: 0, riichi: 0, calls: 0, winPts: 0, yakuman: 0, best: null, history: [] }; }
 let recOK = true;
 function loadRec() {
-  try { const r = Object.assign(emptyRec(), JSON.parse(localStorage.getItem(REC_KEY) || 'null') || {}); r.seats = [0, 1, 2].map(i => Object.assign(emptySeat(), (r.seats || [])[i] || {})); return r; }
+  try {
+    const r = Object.assign(emptyRec(), JSON.parse(localStorage.getItem(REC_KEY) || 'null') || {}); r.seats = [0, 1, 2].map(i => Object.assign(emptySeat(), (r.seats || [])[i] || {}));
+    if (R2) { r.yen = r.chips * YEN_CHIP; for (const x of r.seats) x.yen = x.chips * YEN_CHIP; for (const h of r.history) h.yen = h.chips * YEN_CHIP; }
+    return r;
+  }
   catch (e) { recOK = false; return emptyRec(); }
 }
 function saveRec(r) { try { localStorage.setItem(REC_KEY, JSON.stringify(r)); localStorage.getItem(REC_KEY); recOK = true; } catch (e) { recOK = false; } }
@@ -2665,9 +2669,9 @@ async function onEvent(ev, d, g) {
   const sp = SPEED[settings.speed];
   switch (ev) {
     case 'handStart': turnSeat = -1; lastDiscardId = -1; handLog = { riichi: false, calls: 0, riichiSeats: [] }; render(); await pause(350); break;
-    case 'draw': turnSeat = d.seat; render(); if (d.seat === 0) SFX.myTurn(); else { SFX.draw(); await pause(sp.draw); } break;
+    case 'draw': turnSeat = d.seat; if (d.seat === 0) { SFX.myTurn(); render(); } else { SFX.draw(); render(); await pause(sp.draw); } break;
     case 'discard':
-      lastDiscardId = d.tile.id; render(); SFX.discard();
+      SFX.discard(); lastDiscardId = d.tile.id; render();
       if (d.riichi) { if (d.seat === 0) handLog.riichi = true; handLog.riichiSeats.push(d.seat); SFX.riichi(d.seat, d.open); announce(d.seat, d.open ? 'オープンリーチ' : 'リーチ'); await pause(sp.call); }
       else await pause(d.seat === 0 ? 120 : sp.discard);
       break;
@@ -2760,13 +2764,14 @@ function handEnd(res, g) {
 
 function gameEnd(st, g, again) {
   const myYen = again ? Math.round(st.find(r => r.seat === 0).score * YEN_PT + st.find(r => r.seat === 0).chips * YEN_CHIP) : recordGame(st);
-  const rows = st.map(r => `<tr><td>${r.rank}位</td><td>${r.name}</td><td class="r">${fmt(r.points)}</td><td class="r">${r.score > 0 ? '+' : ''}${r.score}</td><td class="r">${r.chips > 0 ? '+' : ''}${r.chips}枚</td><td class="r">${yenFmt(Math.round(r.score * YEN_PT + r.chips * YEN_CHIP))}</td></tr>`).join('');
+  const scoreTd = r => R2 ? '' : `<td class="r">${r.score > 0 ? '+' : ''}${r.score}</td>`;
+  const rows = st.map(r => `<tr><td>${r.rank}位</td><td>${r.name}</td><td class="r">${fmt(r.points)}</td>${scoreTd(r)}<td class="r">${r.chips > 0 ? '+' : ''}${r.chips}枚</td><td class="r">${yenFmt(Math.round(r.score * YEN_PT + r.chips * YEN_CHIP))}</td></tr>`).join('');
   showModal(`<h2>終局</h2>
-    <table><tr class="muted"><td></td><td></td><td class="r">点数</td><td class="r">スコア</td><td class="r">チップ</td><td class="r">収支</td></tr>${rows}</table>
+    <table><tr class="muted"><td></td><td></td><td class="r">点数</td>${R2 ? '' : '<td class="r">スコア</td>'}<td class="r">チップ</td><td class="r">収支</td></tr>${rows}</table>
     <div class="recbig ${myYen >= 0 ? 'plus' : 'minus'}" style="font-size:24px;margin-top:10px">今回 ${yenFmt(myYen)}</div>
     <div class="muted" style="text-align:center">累計 ${yenFmt(records.yen)}（${records.games}半荘）</div>
     ${R2 && g.endBonus && g.endBonus.length ? `<div class="chips">終了ボーナス ${g.endBonus.map(b => `${g.players[b.seat].name} +${b.n}枚（${g.players[b.from].name}から）`).join('・')}</div>` : ''}
-    <p class="muted">${R2 ? '収支はチップだけで計算（チップ1枚＝100円）。点数ではお金は動きません。' : 'スコアは 35,000点持ち40,000点返し・トップにオカ+15・ウマ 20-0-20（1位+20、2位±0、3位−20）。スコア1＝100円、チップ1枚＝500円。'}</p>
+    <p class="muted">${R2 ? '収支はチップだけで計算（チップ1枚＝200円）。点数ではお金は動きません。' : 'スコアは 35,000点持ち40,000点返し・トップにオカ+15・ウマ 20-0-20（1位+20、2位±0、3位−20）。スコア1＝100円、チップ1枚＝500円。'}</p>
     <button class="btn" type="button" id="againBtn">もう一度</button>
     <button class="btn alt" type="button" id="recBtn2">成績を見る</button>`);
   $('againBtn').onclick = () => { hideModal(); openStart(); };
@@ -2808,7 +2813,7 @@ const RULES2 = `<div class="rules">
   <b>チップ</b> 一発・金・裏ドラに1枚。金2枚で和了るとさらに2枚。役満（数え役満を含む）はロンなら放銃者から10枚、ツモなら5枚ずつ。北を4枚抜いた時点で各1枚。飛ばした人に2枚。<br>
   <b>パオ</b> 大三元の3つ目・大四喜の4つ目を鳴かせた人が責任払い。<br>
   <b>終局</b> 誰かが0点未満でトビ終了。オーラスの親は和了ったら続けるかやめるかを選べます（和了止め）。終了時に50,000点台なら4枚、60,000点台8枚、70,000点台12枚、80,000点台14枚、90,000点台16枚、100,000点台18枚、110,000点以上20枚を、50,000点に届かなかったラスからもらえます。<br>
-  <b>収支</b> チップだけで計算（チップ1枚＝100円）。点数ではお金は動きません。
+  <b>収支</b> チップだけで計算（チップ1枚＝200円）。点数ではお金は動きません。
 </div>`;
 function settingsHTML(inGame) {
   return `${inGame || R2 ? '' : `<div class="opt">対局の長さ ${seg('length', [['tonpu', '東風'], ['hanchan', '半荘']])}</div>
