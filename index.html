@@ -1478,21 +1478,25 @@ class Game {
     return this.round > this.lastRound;
   }
 
-  // 終了時の点数ボーナス：50,000点台以上で終えた人がもらい、50,000点に届かなかったラスが払う
+  // 終了時の点数ボーナス：50,000点台以上で終えた人がもらい、50,000点に届かなかったラスが払う。
+  // ラスが同点で2人いるときは、2人で半分ずつ払う（折半）
   applyEndBonus() {
     this.endBonus = [];
     const B = this.opts.endBonus;
     if (!B) return;
     const P = this.players;
-    const fromStart = i => (i - this.startSeat + 3) % 3;
-    const last = [0, 1, 2].sort((a, b) => P[a].points - P[b].points || fromStart(b) - fromStart(a))[0];
-    if (P[last].points >= B[B.length - 1][0]) return;
+    const low = Math.min(...P.map(p => p.points));
+    if (low >= B[B.length - 1][0]) return;
+    const payers = [0, 1, 2].filter(i => P[i].points === low);
+    if (payers.length === 3) return;
     for (let i = 0; i < 3; i++) {
-      if (i === last) continue;
+      if (payers.includes(i)) continue;
       const hit = B.find(([min]) => P[i].points >= min);
       if (!hit) continue;
-      P[i].chips += hit[1]; P[last].chips -= hit[1];
-      this.endBonus.push({ seat: i, from: last, n: hit[1] });
+      const n = hit[1];
+      // 折半（枚数はすべて偶数なので割り切れる。念のため端数は先の人へ）
+      const shares = payers.map((j, x) => Math.floor(n / payers.length) + (x < n % payers.length ? 1 : 0));
+      payers.forEach((j, x) => { P[j].chips -= shares[x]; P[i].chips += shares[x]; this.endBonus.push({ seat: i, from: j, n: shares[x] }); });
     }
   }
 
@@ -2778,7 +2782,7 @@ function gameEnd(st, g, again) {
     <table><tr class="muted"><td></td><td></td><td class="r">点数</td>${R2 ? '<td class="r">対局中のチップ</td><td class="r">持ち点のチップ</td><td class="r">合計</td>' : '<td class="r">スコア</td><td class="r">チップ</td>'}<td class="r">収支</td></tr>${rows}</table>
     <div class="recbig ${myYen >= 0 ? 'plus' : 'minus'}" style="font-size:24px;margin-top:10px">今回 ${yenFmt(myYen)}</div>
     <div class="muted" style="text-align:center">累計 ${yenFmt(records.yen)}（${records.games}半荘）</div>
-    ${R2 && g.endBonus && g.endBonus.length ? `<div class="muted">持ち点のチップ：${g.endBonus.map(b => `${g.players[b.seat].name} +${b.n}枚（${g.players[b.from].name}から）`).join('・')}</div>` : ''}
+    ${R2 && g.endBonus && g.endBonus.length ? `<div class="muted">持ち点のチップ：${g.endBonus.map(b => `${g.players[b.seat].name} +${b.n}枚（${g.players[b.from].name}から）`).join('・')}${new Set(g.endBonus.map(b => b.from)).size > 1 ? '（ラスが同点のため折半）' : ''}</div>` : ''}
     <p class="muted">${R2 ? '収支はチップだけで計算（チップ1枚＝200円）。点数ではお金は動きません。' : 'スコアは 35,000点持ち40,000点返し・トップにオカ+15・ウマ 20-0-20（1位+20、2位±0、3位−20）。スコア1＝100円、チップ1枚＝500円。'}</p>
     <button class="btn" type="button" id="againBtn">もう一度</button>
     <button class="btn alt" type="button" id="recBtn2">成績を見る</button>`, R2);
@@ -2820,7 +2824,7 @@ const RULES2 = `<div class="rules">
   <b>リーチ</b> 0点ではリーチできません。<br>
   <b>チップ</b> 一発・金・裏ドラに1枚。金2枚で和了るとさらに2枚。役満（数え役満を含む）はロンなら放銃者から10枚、ツモなら5枚ずつ。北を4枚抜いた時点で各1枚。飛ばした人に2枚。<br>
   <b>パオ</b> 大三元の3つ目・大四喜の4つ目を鳴かせた人が責任払い。<br>
-  <b>終局</b> 誰かが0点未満でトビ終了。オーラスの親は和了ったら続けるかやめるかを選べます（和了止め）。終了時に50,000点台なら4枚、60,000点台8枚、70,000点台12枚、80,000点台14枚、90,000点台16枚、100,000点台18枚、110,000点以上20枚を、50,000点に届かなかったラスからもらえます。<br>
+  <b>終局</b> 誰かが0点未満でトビ終了。オーラスの親は和了ったら続けるかやめるかを選べます（和了止め）。終了時に50,000点台なら4枚、60,000点台8枚、70,000点台12枚、80,000点台14枚、90,000点台16枚、100,000点台18枚、110,000点以上20枚を、50,000点に届かなかったラスからもらえます（ラスが同点なら2人で折半）。<br>
   <b>収支</b> チップだけで計算（チップ1枚＝200円）。点数ではお金は動きません。
 </div>`;
 function settingsHTML(inGame) {
