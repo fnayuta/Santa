@@ -182,6 +182,7 @@ body {
 .sheet::-webkit-scrollbar { display: none; }
 .cols > .col + .col { margin-top: 8px; }
 html.land .sheet.wide { max-width: min(calc(var(--W) - 24px), 1000px); padding: 14px 20px 16px; }
+html.land .sheet.wide:not(:has(.cols)) { max-width: min(calc(var(--W) - 24px), 720px); }
 html.land .sheet.wide .cols { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; align-items: start; }
 html.land .sheet.wide .cols > .col + .col { margin-top: 0; }
 html.land .sheet.wide h2 { font-size: 22px; }
@@ -738,6 +739,9 @@ function evaluateWin(ctx) {
   const aka = allTiles.filter(t => t.red).length;
   const kin = allTiles.filter(t => t.gold).length;
   const crystal = allTiles.some(t => t.crystal), platinum = allTiles.some(t => t.platinum);
+  // 1萬・9萬は順子にならないので、2枚なら対子（雀頭や七対子の対子）。4枚でカンしていなければ4枚使い七対子の対子
+  const asPair = k => { const n = kindsAll.filter(x => x === k).length; return n === 2 || (n === 4 && !melds.some(m => m.k === k)); };
+  const crystalPair = crystal && asPair(0), platinumPair = platinum && asPair(8);
 
   let best = null;
   for (const cd of cands) {
@@ -765,7 +769,7 @@ function evaluateWin(ctx) {
       han += dora + aka + kin + ctx.nukiCount + ura;
     }
   }
-  return { hasYaku, yaku, han, ym: best.ym, dora, aka, kin, ura, nuki: ctx.nukiCount, yakuHan: best.han, crystal, platinum };
+  return { hasYaku, yaku, han, ym: best.ym, dora, aka, kin, ura, nuki: ctx.nukiCount, yakuHan: best.han, crystal, platinum, crystalPair, platinumPair };
 }
 
 // ---- 点数（40符固定・ツモ損なし） ----
@@ -1335,7 +1339,8 @@ class Game {
     const w = P[winner];
     const isDealer = winner === this.dealer;
     const pay0 = payments(ev.han, ev.ym, isDealer, tsumo);
-    const both = ev.crystal && ev.platinum && this.opts.bothX4;
+    // クリスタルとプラチナが両方あれば4倍。ただしどちらかが対子なら4倍にしない（それぞれ2倍）
+    const both = ev.crystal && ev.platinum && this.opts.bothX4 && !ev.crystalPair && !ev.platinumPair;
     const mult = ev.crystal && this.opts.crystalMult ? (both ? 4 : this.opts.crystalMult) : 1;
     const pay = {}; for (const key in pay0) pay[key] = pay0[key] * mult;
     const delta = [0, 0, 0];
@@ -2765,15 +2770,19 @@ function handEnd(res, g) {
 function gameEnd(st, g, again) {
   const myYen = again ? Math.round(st.find(r => r.seat === 0).score * YEN_PT + st.find(r => r.seat === 0).chips * YEN_CHIP) : recordGame(st);
   const scoreTd = r => R2 ? '' : `<td class="r">${r.score > 0 ? '+' : ''}${r.score}</td>`;
-  const rows = st.map(r => `<tr><td>${r.rank}位</td><td>${r.name}</td><td class="r">${fmt(r.points)}</td>${scoreTd(r)}<td class="r">${r.chips > 0 ? '+' : ''}${r.chips}枚</td><td class="r">${yenFmt(Math.round(r.score * YEN_PT + r.chips * YEN_CHIP))}</td></tr>`).join('');
+  const pm = n => (n > 0 ? '+' : '') + n + '枚';
+  // 2つ目のゲーム：対局中に獲得したチップ・持ち点によるチップ（終了ボーナス）・合計を分けて表示
+  const bonusOf = seat => (g.endBonus || []).reduce((a, b) => a + (b.seat === seat ? b.n : 0) - (b.from === seat ? b.n : 0), 0);
+  const chipTds = r => R2 ? `<td class="r">${pm(r.chips - bonusOf(r.seat))}</td><td class="r">${pm(bonusOf(r.seat))}</td><td class="r"><b>${pm(r.chips)}</b></td>` : `<td class="r">${pm(r.chips)}</td>`;
+  const rows = st.map(r => `<tr><td>${r.rank}位</td><td>${r.name}</td><td class="r">${fmt(r.points)}</td>${scoreTd(r)}${chipTds(r)}<td class="r">${yenFmt(Math.round(r.score * YEN_PT + r.chips * YEN_CHIP))}</td></tr>`).join('');
   showModal(`<h2>終局</h2>
-    <table><tr class="muted"><td></td><td></td><td class="r">点数</td>${R2 ? '' : '<td class="r">スコア</td>'}<td class="r">チップ</td><td class="r">収支</td></tr>${rows}</table>
+    <table><tr class="muted"><td></td><td></td><td class="r">点数</td>${R2 ? '<td class="r">対局中のチップ</td><td class="r">持ち点のチップ</td><td class="r">合計</td>' : '<td class="r">スコア</td><td class="r">チップ</td>'}<td class="r">収支</td></tr>${rows}</table>
     <div class="recbig ${myYen >= 0 ? 'plus' : 'minus'}" style="font-size:24px;margin-top:10px">今回 ${yenFmt(myYen)}</div>
     <div class="muted" style="text-align:center">累計 ${yenFmt(records.yen)}（${records.games}半荘）</div>
-    ${R2 && g.endBonus && g.endBonus.length ? `<div class="chips">終了ボーナス ${g.endBonus.map(b => `${g.players[b.seat].name} +${b.n}枚（${g.players[b.from].name}から）`).join('・')}</div>` : ''}
+    ${R2 && g.endBonus && g.endBonus.length ? `<div class="muted">持ち点のチップ：${g.endBonus.map(b => `${g.players[b.seat].name} +${b.n}枚（${g.players[b.from].name}から）`).join('・')}</div>` : ''}
     <p class="muted">${R2 ? '収支はチップだけで計算（チップ1枚＝200円）。点数ではお金は動きません。' : 'スコアは 35,000点持ち40,000点返し・トップにオカ+15・ウマ 20-0-20（1位+20、2位±0、3位−20）。スコア1＝100円、チップ1枚＝500円。'}</p>
     <button class="btn" type="button" id="againBtn">もう一度</button>
-    <button class="btn alt" type="button" id="recBtn2">成績を見る</button>`);
+    <button class="btn alt" type="button" id="recBtn2">成績を見る</button>`, R2);
   $('againBtn').onclick = () => { hideModal(); openStart(); };
   $('recBtn2').onclick = () => openRecords(() => gameEnd(st, g, true));
 }
@@ -2806,7 +2815,7 @@ const RULES = `<div class="rules">
 const RULES2 = `<div class="rules">
   <b>基本</b> サンマ・半荘戦・40,000点持ち・順位点なし。途中流局なし。チーなし。ダブロンあり。<br>
   <b>牌</b> 萬子は1・9のみの108枚。5筒・5索は各<b>赤3枚・金1枚</b>（すべてドラ1）。<br>
-  <b>特殊牌</b> <b>金</b>：和了時1枚。<b>クリスタル一萬</b>（水色）：和了時打点2倍。<b>プラチナ九萬</b>（青）：和了時チップ2倍。クリスタルとプラチナが両方あると、それぞれ4倍。<b>エメラルド北ポッチ</b>（北の字が緑）：リーチ後にツモるとオールマイティ。抜いてもよく、抜いてもフリテンになりません。<br>
+  <b>特殊牌</b> <b>金</b>：和了時1枚。<b>クリスタル一萬</b>（水色）：和了時打点2倍。<b>プラチナ九萬</b>（青）：和了時チップ2倍。クリスタルとプラチナが両方あると、それぞれ4倍（どちらかが対子のときは4倍にならず、それぞれ2倍）。<b>エメラルド北ポッチ</b>（北の字が緑）：リーチ後にツモるとオールマイティ。抜いてもよく、抜いてもフリテンになりません。<br>
   <b>点数</b> <b>30符固定</b>・<b>ツモ損あり</b>・100の位は切り上げ（3,900→4,000）。満貫は5翻から。1本場はロン2,000点・ツモ各1,000点。ノーテン罰符は場に6,000点。<br>
   <b>役</b> 数え役満は14翻から。萬子の混一色は役満。流し倍満あり。<b>4枚使い七対子</b>あり（カンした場合は不可）：4枚が1組で4翻・2組で8翻・3組で12翻。<b>オープンリーチ</b>あり（2翻、手牌をすべて公開、供託5,000点）。暗槓に対する国士無双の和了あり。<br>
   <b>リーチ</b> 0点ではリーチできません。<br>
